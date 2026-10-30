@@ -1,0 +1,82 @@
+services:
+  # 1. SIEM & XDR CORE (Wazuh Manager Headless CLI - Không cần Indexer/Dashboard)
+  soc-siem:
+    image: wazuh/wazuh-manager:4.9.0
+    container_name: soc-siem
+    hostname: wazuh-manager
+    restart: unless-stopped
+    mem_limit: 1200m
+    ports:
+      - "1514:1514/tcp"     # Nhận sự kiện từ Wazuh Agent (Victim)
+      - "1515:1515/tcp"     # Đăng ký Wazuh Agent mới
+      - "514:514/udp"       # Nhận Syslog
+      - "55000:55000/tcp"   # Wazuh REST API
+    environment:
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=MyS3cr3tP4ssw0rd.!
+    volumes:
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_etc:/var/ossec/etc
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
+  # 2. FIREWALL & SURICATA NIDS (Nắm trực tiếp 2 card ens33 và ens37 của Lubuntu)
+  net-firewall:
+    image: jasonish/suricata:7.0.6
+    container_name: net-firewall
+    network_mode: "host"
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    restart: unless-stopped
+    mem_limit: 800m
+    volumes:
+      - ./configs/firewall_init.sh:/firewall_init.sh:ro
+      - suricata_logs:/var/log/suricata
+    entrypoint: ["/bin/sh", "/firewall_init.sh"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
+  # 3. AI AGENT CONTROLLER (Python Thuần) + WEB VISUALIZE UI (Port 8080)
+  soc-ai-agent:
+    build: ./agent
+    container_name: soc-ai-agent
+    network_mode: "host"
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      - OLLAMA_API_URL=http://192.168.63.1:11434/api/chat
+      - LLM_MODEL=qwen3.5:4b
+      - WAZUH_ALERT_FILE=/var/ossec/logs/alerts/alerts.json
+      - SURICATA_EVE_FILE=/var/log/suricata/eve.json
+      - WAN_IF=ens33
+      - LAN_IF=ens37
+      - PROTECTED_SUBNET=192.168.214.0/24
+    volumes:
+      - ./agent:/app           # Ánh xạ toàn bộ thư mục code vào container
+      - wazuh_logs:/var/ossec/logs:ro
+      - suricata_logs:/var/log/suricata:ro
+    depends_on:
+      - soc-siem
+      - net-firewall
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
+volumes:
+  wazuh_logs:
+  wazuh_etc:
+  suricata_logs:
