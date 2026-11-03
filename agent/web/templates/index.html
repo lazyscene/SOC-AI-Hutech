@@ -377,11 +377,34 @@
                         </div>`;
                 } else {
                     decisionBox.innerHTML = data.decisions.map(d => {
-                        const isTP = d.verdict === 'TRUE POSITIVE';
-                        const borderClass = isTP ? 'border-rose-500 bg-rose-950/20' : 'border-emerald-500 bg-emerald-950/20';
-                        const verdictBadge = isTP 
-                            ? '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-rose-950 text-rose-400 border border-rose-800 shadow">TRUE POSITIVE</span>'
-                            : '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 shadow">FALSE POSITIVE</span>';
+                        let borderClass = 'border-slate-600 bg-slate-900/60';
+                        let verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 shadow">UNKNOWN</span>';
+
+                        if (d.verdict === 'TRUE POSITIVE') {
+                            borderClass = 'border-rose-500 bg-rose-950/20';
+                            verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-rose-950 text-rose-400 border border-rose-800 shadow">TRUE POSITIVE</span>';
+                        } else if (d.verdict === 'FALSE POSITIVE') {
+                            borderClass = 'border-emerald-500 bg-emerald-950/20';
+                            verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 shadow">FALSE POSITIVE</span>';
+                        } else if (d.verdict === 'SUSPICIOUS') {
+                            borderClass = 'border-amber-500 bg-amber-950/20';
+                            verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800 shadow">SUSPICIOUS</span>';
+                        }
+
+                        // Phân tách ngữ nghĩa IP mạng vs Endpoint FIM (Quy tắc 2)
+                        let ipInfoHtml = '';
+                        if (d.src_ip && d.src_ip !== 'unknown') {
+                            ipInfoHtml = `SRC: <span class="text-cyan-300 font-bold">${escapeHtml(d.src_ip)}</span>`;
+                            if (d.victim_ip && d.victim_ip !== 'unknown') {
+                                ipInfoHtml += ` | Target: <span class="text-amber-300">${escapeHtml(d.victim_ip)}</span>`;
+                            }
+                        } else {
+                            const endpointHost = (d.victim_ip && d.victim_ip !== 'unknown') ? d.victim_ip : (d.agent_ip && d.agent_ip !== 'unknown' ? d.agent_ip : 'Internal Host');
+                            ipInfoHtml = `Host: <span class="text-amber-300 font-bold">${escapeHtml(endpointHost)}</span>`;
+                        }
+                        if (d.file_path) {
+                            ipInfoHtml += ` | File: <span class="text-purple-300 font-mono">${escapeHtml(d.file_path)}</span>`;
+                        }
 
                         // MITRE Badges
                         let mitreHtml = '';
@@ -407,7 +430,7 @@
                                     <div>
                                         <div class="font-bold text-white text-sm">${escapeHtml(d.title)}</div>
                                         <div class="text-xs font-mono text-slate-400 mt-0.5">
-                                            SRC: <span class="text-cyan-300 font-bold">${escapeHtml(d.src_ip)}</span> | 
+                                            ${ipInfoHtml} | 
                                             Thời gian: <span class="text-slate-300">${escapeHtml(d.time)}</span> | 
                                             Nguồn: <span class="text-slate-300">${escapeHtml(d.source)}</span>
                                         </div>

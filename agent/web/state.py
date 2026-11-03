@@ -2,7 +2,14 @@ from collections import deque
 from datetime import datetime
 
 STATE = {
-    "stats": {"total_alerts": 0, "true_positives": 0, "false_positives": 0, "blocked_ips": []},
+    "stats": {
+        "total_alerts": 0,
+        "true_positives": 0,
+        "false_positives": 0,
+        "suspicious": 0,
+        "unknown": 0,
+        "blocked_ips": []
+    },
     "reasoning_stream": deque(maxlen=50),
     "decisions": deque(maxlen=30)
 }

@@ -7,6 +7,7 @@ import requests
 from collections import deque
 from tools.base import register_tool
 from web.state import log_event
+from core.models import normalize_hash
 from core.network_utils import classify_subnet, is_valid_ip, is_private_ip
 from core.misp_vault import query_ioc_vault, fetch_open_misp_feeds
 
@@ -197,7 +198,12 @@ FILE_HASH_SCHEMA = {
 
 @register_tool(FILE_HASH_SCHEMA)
 def tool_check_file_hash(file_hash: str):
-    clean_hash = (file_hash or "").strip().lower()
+    # 1. Kiểm tra chặt chẽ định dạng và chuẩn hóa lowercase
+    valid_hash = normalize_hash(file_hash)
+    if not valid_hash:
+        return f"[Bỏ qua] Mã hash không hợp lệ: '{file_hash}'. Yêu cầu chuỗi Hexadecimal MD5 (32), SHA1 (40), hoặc SHA256 (64 ký tự)."
+
+    clean_hash = valid_hash
     log_event("TOOL", f"Tra cứu Threat Intel mã Hash: {clean_hash[:16]}...")
 
     cache_key = f"hash:{clean_hash}"
@@ -244,20 +250,32 @@ def tool_check_file_hash(file_hash: str):
     # Tổng hợp kết quả
     if isinstance(vt_res, dict):
         misp_extra = f", MISP: {misp_match.get('threat_level')}" if misp_match else ""
+        is_eicar = "eicar" in (str(vt_res.get("label", "")) + " " + str(misp_match or "")).lower()
+        if is_eicar:
+            misp_extra += " (EICAR Antivirus Test Signature)"
+            vt_verdict = "MALICIOUS"
+        else:
+            vt_verdict = vt_res["verdict"]
         result = (f"[TI Hash] VT: {vt_res['malicious']}/{vt_res['total']} engines, "
                   f"Suspicious: {vt_res['suspicious']}, Threat: {vt_res['label']}{misp_extra}. "
-                  f"Verdict: {vt_res['verdict']}")
+                  f"Verdict: {vt_verdict}")
     elif vt_res == "404_NOT_FOUND":
         if misp_match:
-            result = f"[TI Hash] VT chua ghi nhan hash. Tim thay trong MISP: {misp_match.get('threat_level')} - {misp_match.get('comment')}. Verdict: MALICIOUS"
-        else:
-            result = f"[TI Hash] Hash chua tung xuat hien tren VirusTotal va MISP. Verdict: UNKNOWN / CLEAN"
-    else:
-        if misp_match:
-            result = f"[TI Hash] MISP Khop: {misp_match.get('threat_level')} - {misp_match.get('comment')}. Verdict: MALICIOUS"
+            is_eicar = "eicar" in str(misp_match.get("comment", "")).lower()
+            tag = " (EICAR Test Signature)" if is_eicar else ""
+            result = f"[TI Hash] VT chua ghi nhan hash. Tim thay trong MISP: {misp_match.get('threat_level')}{tag} - {misp_match.get('comment')}. Verdict: MALICIOUS"
             should_cache = True
         else:
-            result = f"[TI Hash] Khong the ket noi VirusTotal (Rate Limit hoac loi mang) va khong co trong MISP."
+            result = f"[TI Hash] Hash chua tung xuat hien tren VirusTotal va MISP (404 Not Found). Verdict: UNKNOWN"
+            should_cache = True
+    else:
+        if misp_match:
+            is_eicar = "eicar" in str(misp_match.get("comment", "")).lower()
+            tag = " (EICAR Test Signature)" if is_eicar else ""
+            result = f"[TI Hash] MISP Khop: {misp_match.get('threat_level')}{tag} - {misp_match.get('comment')}. Verdict: MALICIOUS"
+            should_cache = True
+        else:
+            result = f"[TI Hash] Khong the ket noi VirusTotal (Rate Limit/Loi API) va khong co trong MISP. Status: TI_ERROR / UNKNOWN"
 
     result = result[:300]
     # Chỉ cache khi có kết quả hợp lệ, tuyệt đối không cache lỗi 429

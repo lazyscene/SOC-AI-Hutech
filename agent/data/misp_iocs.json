@@ -97,5 +97,23 @@
     "threat_level": "Critical",
     "comment": "EternalBlue SMBv1 Remote Code Execution (WannaCry vector).",
     "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-012",
+    "type": "sha256",
+    "value": "131f95c51cc819465fa1797f6ccacf9d494aaaff46fa3eac73ae63ffbdfd8267",
+    "category": "Payload delivery",
+    "threat_level": "High",
+    "comment": "EICAR Standard Antivirus Test File SHA256 (69-byte echo with newline).",
+    "date": "2026-11-03"
+  },
+  {
+    "id": "IOC-013",
+    "type": "md5",
+    "value": "69630e4574ec6798239b091cda43dca0",
+    "category": "Payload delivery",
+    "threat_level": "High",
+    "comment": "EICAR Standard Antivirus Test File MD5 (69-byte echo with newline).",
+    "date": "2026-11-03"
   }
 ]

@@ -12,26 +12,44 @@ PFSENSE_API_URL = os.getenv("PFSENSE_API_URL", "https://192.168.171.2/api/v2")
 PFSENSE_API_KEY = os.getenv("PFSENSE_API_KEY", "")
 PFSENSE_ALIAS_NAME = os.getenv("PFSENSE_ALIAS_NAME", "SOC_BLOCKLIST")
 
-PROTECTED_IPS = [
+DEFAULT_PROTECTED_IPS = [
     "127.0.0.1",
-    "192.168.63.1",
-    "192.168.63.138",
-    "192.168.171.1",
-    "192.168.171.2",
-    "192.168.214.1",
-    "192.168.45.1"
+    "192.168.63.1",    # Host GPU
+    "192.168.63.138",  # SOC WAN
+    "192.168.171.1",   # pfSense Transit Gateway
+    "192.168.171.2",   # pfSense Firewall Management
+    "192.168.171.34",  # Wazuh Manager SOC
+    "192.168.214.1",   # Victim LAN 1 Gateway
+    "192.168.214.10",  # Victim Linux Server
+    "192.168.45.1",    # Victim LAN 2 Gateway
+    "192.168.45.10"    # Victim Windows
 ]
+
+def get_protected_ips() -> list:
+    """Lấy toàn bộ IP được bảo vệ từ cấu hình mặc định và biến môi trường SOC_PROTECTED_IPS"""
+    env_ips = os.getenv("SOC_PROTECTED_IPS", "")
+    extra = [ip.strip() for ip in env_ips.split(",") if ip.strip()]
+    combined = list(DEFAULT_PROTECTED_IPS)
+    for ip in extra:
+        if ip not in combined:
+            combined.append(ip)
+    return combined
+
+PROTECTED_IPS = get_protected_ips()
 
 def validate_blockable_ip(ip: str):
     """Kiểm tra tính an toàn của IP: chặn loopback, multicast, broadcast, whitelist"""
-    if not ip or ip == "unknown":
-        return False, "Từ chối chặn: IP không hợp lệ."
+    if not ip or not isinstance(ip, str):
+        return False, "Từ chối chặn: IP không hợp lệ hoặc rỗng."
 
     clean_ip = ip.strip()
+    if clean_ip.lower() in ["unknown", "none", "local", "localhost", "n/a", ""]:
+        return False, "Từ chối chặn: IP không xác định hoặc nội bộ (unknown/local)."
 
-    # 1. Kiểm tra danh sách trắng hệ thống
-    if clean_ip in PROTECTED_IPS:
-        return False, f"Từ chối chặn IP hệ thống quan trọng (Whitelist): {clean_ip}"
+    # 1. Kiểm tra danh sách trắng hệ thống (Protected IPs)
+    protected_list = get_protected_ips()
+    if clean_ip in protected_list:
+        return False, f"Từ chối chặn IP hệ thống quan trọng (Protected IP/Whitelist): {clean_ip}"
 
     # 2. Kiểm tra địa chỉ Broadcast phổ biến
     if clean_ip.endswith(".255") or clean_ip == "255.255.255.255":
