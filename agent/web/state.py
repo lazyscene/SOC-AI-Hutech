@@ -15,4 +15,3 @@ def log_event(step_type: str, message: str):
     }
     STATE["reasoning_stream"].appendleft(entry)
     print(f"[{entry['time']}][{step_type}] {message}", flush=True)
-

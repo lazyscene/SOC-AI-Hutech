@@ -1,0 +1,101 @@
+[
+  {
+    "id": "IOC-011",
+    "type": "ip-src",
+    "value": "192.168.63.199",
+    "category": "Network activity",
+    "threat_level": "High",
+    "comment": "Test IOC add via API",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-001",
+    "type": "ip-src",
+    "value": "192.168.63.250",
+    "category": "Attribution",
+    "threat_level": "High",
+    "comment": "Kali Linux Attacker host trong phòng Lab WAN (chuyên quét port Nmap và khai thác RCE).",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-002",
+    "type": "ip-src",
+    "value": "192.168.63.150",
+    "category": "Attribution",
+    "threat_level": "Medium",
+    "comment": "Metasploit penetration testing node trong phòng Lab WAN.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-003",
+    "type": "md5",
+    "value": "44d88612fea8a8f36de82e1278abb02f",
+    "category": "Payload delivery",
+    "threat_level": "High",
+    "comment": "EICAR Standard Antivirus Test File MD5.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-004",
+    "type": "sha256",
+    "value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+    "category": "Payload delivery",
+    "threat_level": "High",
+    "comment": "EICAR Standard Antivirus Test File SHA256.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-005",
+    "type": "sha256",
+    "value": "41b80bf853cf7e3c1a32ff2ebc839f21f1e9c5c00e1215b22301b7a0f7e1b59c",
+    "category": "Payload delivery",
+    "threat_level": "Critical",
+    "comment": "Godzilla / Behinder Webshell cmd.jsp backdoor SHA256.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-006",
+    "type": "domain",
+    "value": "c2.evil-lab.local",
+    "category": "Network activity",
+    "threat_level": "High",
+    "comment": "Simulated Command and Control (C2) domain trong phòng Lab.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-007",
+    "type": "url",
+    "value": "http://192.168.63.250/shell.ps1",
+    "category": "Payload delivery",
+    "threat_level": "Critical",
+    "comment": "URL tải script PowerShell độc hại Stage 1 từ Attacker host.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-008",
+    "type": "cve",
+    "value": "CVE-2021-44228",
+    "category": "Vulnerability",
+    "threat_level": "Critical",
+    "comment": "Apache Log4j JNDI RCE (Log4Shell) lỗ hổng nghiêm trọng.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-009",
+    "type": "cve",
+    "value": "CVE-2023-34362",
+    "category": "Vulnerability",
+    "threat_level": "Critical",
+    "comment": "MOVEit Transfer SQL Injection & Remote Code Execution.",
+    "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-010",
+    "type": "cve",
+    "value": "CVE-2017-0144",
+    "category": "Vulnerability",
+    "threat_level": "Critical",
+    "comment": "EternalBlue SMBv1 Remote Code Execution (WannaCry vector).",
+    "date": "2026-11-01"
+  }
+]

@@ -1,0 +1,33 @@
+<group name="local,pfsense,suricata,">
+
+  <!-- pfSense Filterlog Base (level 2: no alert for ordinary pass traffic) -->
+  <rule id="100100" level="2">
+    <decoded_as>pfsense-filterlog</decoded_as>
+    <description>pfSense firewall packet event.</description>
+    <group>firewall,pfsense,</group>
+  </rule>
+
+  <!-- Drop Windows Host broadcast traffic to .255 (level 0: silent ignore) -->
+  <rule id="100102" level="0">
+    <if_sid>100100</if_sid>
+    <dstip>192.168.63.255</dstip>
+    <description>Ignore Windows Host broadcast packets to 192.168.63.255.</description>
+    <group>pfsense,broadcast_ignore,</group>
+  </rule>
+
+  <!-- pfSense Blocked Packets (level 7: triggers alert) -->
+  <rule id="100101" level="7">
+    <if_sid>100100</if_sid>
+    <action>block</action>
+    <description>pfSense firewall blocked traffic from $(srcip) to $(dstip).</description>
+    <group>firewall,pfsense,firewall_block,</group>
+  </rule>
+
+  <!-- Suricata NIDS Syslog Rules (level 7: triggers alert) -->
+  <rule id="100200" level="7">
+    <decoded_as>pfsense-suricata</decoded_as>
+    <description>Suricata NIDS alert: $(id) detected from $(srcip) to $(dstip).</description>
+    <group>ids,suricata,attack,</group>
+  </rule>
+
+</group>

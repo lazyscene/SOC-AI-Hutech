@@ -1,6 +1,7 @@
 import base64
 from tools.base import register_tool
 from web.state import log_event
+from core.network_utils import classify_subnet
 
 DECODE_SCHEMA = {
     "name": "tool_decode_base64",
@@ -38,11 +39,5 @@ def tool_decode_base64(encoded_str: str):
 @register_tool(CONTEXT_SCHEMA)
 def tool_check_ip_context(ip: str):
     log_event("TOOL", f"Kiểm tra ngữ cảnh mạng IP: {ip}")
-    if ip in ["192.168.214.2", "192.168.100.2"]:
-        return f"IP {ip} la cong Gateway cua SOC-Box."
-    elif ip.startswith("192.168.214.") or ip.startswith("192.168.100."):
-        return f"IP {ip} thuoc mang Victim LAN noi bo."
-    elif ip.startswith("192.168.63."):
-        return f"IP {ip} thuoc mang WAN ben ngoai (Attacker)."
-    return f"IP {ip} la dia chi Internet ben ngoai."
-
+    desc = classify_subnet(ip)
+    return f"IP {ip} thuộc phân vùng: {desc}"

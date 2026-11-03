@@ -1,0 +1,27 @@
+<decoder name="pfsense-filterlog">
+  <prematch type="pcre2">^filterlog</prematch>
+</decoder>
+
+<decoder name="pfsense-filterlog">
+  <program_name>^filterlog</program_name>
+</decoder>
+
+<decoder name="pfsense-filterlog-fields">
+  <parent>pfsense-filterlog</parent>
+  <regex type="pcre2">:\s*\d+,\d+,[^,]*,(\d+),([^,]+),[^,]+,([^,]+),([^,]+),4,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,([^,]+),[^,]*,(\d+\.\d+\.\d+\.\d+),(\d+\.\d+\.\d+\.\d+),(\d+),(\d+)</regex>
+  <order>id, extra_data, action, extra_data, protocol, srcip, dstip, srcport, dstport</order>
+</decoder>
+
+<decoder name="pfsense-suricata">
+  <program_name>^suricata</program_name>
+</decoder>
+
+<decoder name="pfsense-suricata">
+  <prematch type="pcre2">suricata\[\d+\]:|\[\d+:\d+:\d+\]</prematch>
+</decoder>
+
+<decoder name="pfsense-suricata-fields">
+  <parent>pfsense-suricata</parent>
+  <regex type="pcre2">\[(\d+:\d+:\d+)\]\s*([^\[]+?)\s*(?:\[Classification:\s*([^\]]+)\])?\s*\[Priority:\s*(\d+)\]\s*\{(\w+)\}\s*(\d+\.\d+\.\d+\.\d+):?(\d*)\s*->\s*(\d+\.\d+\.\d+\.\d+):?(\d*)</regex>
+  <order>id, extra_data, status, extra_data, protocol, srcip, srcport, dstip, dstport</order>
+</decoder>

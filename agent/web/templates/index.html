@@ -2,103 +2,433 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>AI SOC Command Center - Modular Visualizer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SOC Command Center - Threat Intel & pfSense REST API v2</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen p-6 font-sans">
     <div class="max-w-7xl mx-auto space-y-6">
+        <!-- Header -->
         <div class="flex justify-between items-center border-b border-slate-800 pb-4">
             <div>
-                <h1 class="text-2xl font-bold text-cyan-400">🛡️ MINI SOC - AI AGENT VISUALIZE CENTER</h1>
-                <p class="text-sm text-slate-400">Hạ tầng Headless CLI điều phối tự động bởi Qwen LLM</p>
+                <div class="flex items-center space-x-3">
+                    <h1 class="text-2xl font-bold text-cyan-400">🛡️ MINI SOC - AI AGENT COMMAND CENTER</h1>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800 animate-pulse">
+                        ● PFSENSE & TI ACTIVE
+                    </span>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-950 text-purple-400 border border-purple-800">
+                        ● MITRE ATT&CK MAPPED
+                    </span>
+                </div>
+                <p class="text-sm text-slate-400 mt-1">pfSense Firewall REST API v2 + Wazuh SIEM + Threat Intel (VirusTotal, AbuseIPDB, MISP IOC) + Qwen LLM Core</p>
             </div>
-            <button onclick="triggerSim()" class="bg-rose-600 hover:bg-rose-500 px-4 py-2 rounded-lg font-semibold text-sm shadow">
-                ⚡ Bắn Cảnh Báo Giả Lập (Test Qwen)
-            </button>
+            <div class="flex items-center space-x-3">
+                <button id="btn-toggle-misp" onclick="toggleMispPanel()" class="bg-purple-900/60 hover:bg-purple-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-purple-700 text-purple-200 shadow flex items-center space-x-1">
+                    <span>📑 Quản Lý MISP IOC</span>
+                </button>
+                <button id="btn-clear" onclick="clearBlocklist()" class="bg-slate-800 hover:bg-slate-700 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-slate-700 text-slate-300 shadow">
+                    🧹 Xóa Sạch SOC_BLOCKLIST
+                </button>
+                <button id="btn-sim" onclick="triggerSim()" class="bg-rose-600 hover:bg-rose-500 active:scale-95 transition px-4 py-2 rounded-lg font-semibold text-sm shadow flex items-center space-x-2">
+                    <span>⚡ Bắn Cảnh Báo Giả Lập (Test TI & Qwen)</span>
+                </button>
+            </div>
         </div>
 
+        <!-- Sơ đồ mạng Topology -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <h2 class="text-sm font-semibold text-slate-400 uppercase mb-3">Trạng Thái Phân Vùng Mạng (Topology)</h2>
-            <div class="grid grid-cols-4 gap-4 text-center items-center">
-                <div class="p-3 bg-slate-800 rounded-lg border border-rose-500/40">
-                    <div class="text-lg font-bold text-rose-400">🌐 WAN (Attacker)</div>
-                    <div class="text-xs text-slate-400">ens33 (192.168.63.0/24)</div>
+            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Sơ Đồ Phân Vùng Mạng & Lớp Threat Intelligence (Active Topology)</h2>
+            <div class="grid grid-cols-5 gap-3 text-center items-center">
+                <div class="p-3 bg-slate-800/80 rounded-lg border border-rose-500/40">
+                    <div class="text-sm font-bold text-rose-400">🌐 WAN (Attacker)</div>
+                    <div class="text-[11px] text-slate-400 font-mono mt-1">192.168.63.0/24</div>
                 </div>
-                <div class="p-3 bg-slate-800 rounded-lg border border-cyan-500/50">
-                    <div class="text-lg font-bold text-cyan-300">🔥 SOC Firewall/NIDS</div>
-                    <div class="text-xs text-slate-400">ens37 (192.168.214.2)</div>
+                <div class="p-3 bg-slate-800/80 rounded-lg border border-cyan-500/50">
+                    <div class="text-sm font-bold text-cyan-300">🔥 pfSense Firewall</div>
+                    <div class="text-[11px] text-slate-400 font-mono mt-1">192.168.171.2 (REST API v2)</div>
                 </div>
-                <div class="p-3 bg-slate-800 rounded-lg border border-emerald-500/50">
-                    <div class="text-lg font-bold text-emerald-400">🖥️ Victim LAN</div>
-                    <div class="text-xs text-slate-400">Subnet 192.168.214.0/24</div>
+                <div class="p-3 bg-slate-800/80 rounded-lg border border-indigo-500/50">
+                    <div class="text-sm font-bold text-indigo-300">🔍 Threat Intel Layer</div>
+                    <div class="text-[11px] text-slate-400 font-mono mt-1">VT v3 + AbuseIPDB + MISP</div>
                 </div>
-                <div class="p-3 bg-slate-800 rounded-lg border border-purple-500/50">
-                    <div class="text-lg font-bold text-purple-400">🧠 Qwen Model</div>
-                    <div class="text-xs text-slate-400">GPU Host (192.168.63.1:11434)</div>
+                <div class="p-3 bg-slate-800/80 rounded-lg border border-emerald-500/50">
+                    <div class="text-sm font-bold text-emerald-400">🖥️ Victim LANs</div>
+                    <div class="text-[11px] text-slate-400 font-mono mt-1">.214.0/24 & .45.0/24</div>
+                </div>
+                <div class="p-3 bg-slate-800/80 rounded-lg border border-purple-500/50">
+                    <div class="text-sm font-bold text-purple-400">🧠 Qwen LLM Core</div>
+                    <div class="text-[11px] text-slate-400 font-mono mt-1">Host GPU (192.168.63.1)</div>
                 </div>
             </div>
         </div>
 
+        <!-- Bảng 4 chỉ số thống kê -->
         <div class="grid grid-cols-4 gap-4">
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs">TỔNG CẢNH BÁO CLI</div>
-                <div id="st-total" class="text-3xl font-bold text-white mt-1">0</div>
+                <div class="text-slate-400 text-xs font-semibold uppercase">TỔNG CẢNH BÁO SIEM ĐÃ ĐỌC</div>
+                <div id="st-total" class="text-3xl font-bold text-white mt-1 font-mono">0</div>
             </div>
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs">TRUE POSITIVE</div>
-                <div id="st-tp" class="text-3xl font-bold text-rose-400 mt-1">0</div>
+                <div class="text-slate-400 text-xs font-semibold uppercase">PHÁT HIỆN TẤN CÔNG (TRUE POSITIVE)</div>
+                <div id="st-tp" class="text-3xl font-bold text-rose-400 mt-1 font-mono">0</div>
             </div>
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs">FALSE POSITIVE ĐÃ LỌC</div>
-                <div id="st-fp" class="text-3xl font-bold text-emerald-400 mt-1">0</div>
+                <div class="text-slate-400 text-xs font-semibold uppercase">ĐÃ LỌC CẢNH BÁO GIẢ (FALSE POSITIVE)</div>
+                <div id="st-fp" class="text-3xl font-bold text-emerald-400 mt-1 font-mono">0</div>
             </div>
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs">IP ĐANG BỊ KHÓA</div>
-                <div id="st-blocked" class="text-sm font-mono text-amber-400 mt-2 break-all">Chưa có</div>
+                <div class="text-slate-400 text-xs font-semibold uppercase">IP BỊ KHÓA (SOC_BLOCKLIST)</div>
+                <div id="st-blocked" class="text-xs font-mono text-amber-400 mt-2 break-all max-h-12 overflow-y-auto">Chưa có</div>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-6">
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                <h2 class="text-sm font-semibold text-cyan-400 uppercase mb-3">Luồng Suy Luận Thời Gian Thực (CLI Stream)</h2>
-                <div id="stream-box" class="space-y-2 h-96 overflow-y-auto font-mono text-xs bg-black/50 p-3 rounded-lg"></div>
+        <!-- MISP IOCs Manager Panel (Collapsible) -->
+        <div id="misp-panel" class="hidden bg-slate-900 border border-purple-800/60 rounded-xl p-4 space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                <div class="flex items-center space-x-2">
+                    <span class="text-purple-400 font-bold text-sm">📑 KHO DỮ LIỆU MISP IOC CỤC BỘ (THREAT INTELLIGENCE REPOSITORY)</span>
+                    <span id="misp-count" class="text-xs font-mono text-slate-400">(0 IOCs)</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="btn-sync-osint" onclick="syncMispFeeds()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow flex items-center space-x-1">
+                        <span>🔄 Cập Nhật Feed Từ OSINT</span>
+                    </button>
+                    <button onclick="toggleMispPanel()" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Đóng</button>
+                </div>
             </div>
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                <h2 class="text-sm font-semibold text-purple-400 uppercase mb-3">Bảng Phán Quyết Sự Cố</h2>
-                <div id="decision-box" class="space-y-3 h-96 overflow-y-auto text-xs"></div>
+
+            <!-- Form thêm IOC mới -->
+            <form id="form-add-ioc" onsubmit="addMispIoc(event)" class="grid grid-cols-12 gap-2 text-xs bg-slate-950 p-3 rounded-lg border border-slate-800">
+                <div class="col-span-2">
+                    <label class="block text-slate-400 mb-1">Loại IOC</label>
+                    <select id="ioc-type" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
+                        <option value="ip-src">ip-src</option>
+                        <option value="sha256">sha256</option>
+                        <option value="md5">md5</option>
+                        <option value="domain">domain</option>
+                        <option value="url">url</option>
+                        <option value="cve">cve</option>
+                    </select>
+                </div>
+                <div class="col-span-3">
+                    <label class="block text-slate-400 mb-1">Giá trị Indicator</label>
+                    <input id="ioc-value" required type="text" placeholder="192.168.63.x hoặc hash..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white font-mono">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-slate-400 mb-1">Mức Độ (Threat)</label>
+                    <select id="ioc-threat" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
+                        <option value="Critical">Critical</option>
+                        <option value="High" selected>High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                </div>
+                <div class="col-span-4">
+                    <label class="block text-slate-400 mb-1">Mô tả / Ngữ cảnh</label>
+                    <input id="ioc-comment" type="text" placeholder="Ghi chú về nguồn tấn công..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
+                </div>
+                <div class="col-span-1 flex items-end">
+                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-1.5 rounded transition">
+                        + Thêm
+                    </button>
+                </div>
+            </form>
+
+            <!-- Thanh tìm kiếm & lọc IOCs -->
+            <div class="flex items-center justify-between">
+                <div class="relative w-80">
+                    <input id="misp-search" oninput="onMispSearchInput()" type="text" placeholder="🔍 Tìm nhanh IP, Hash, Domain, CVE..." class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-purple-500">
+                </div>
+                <div id="misp-info" class="text-xs text-slate-400">
+                    Hiển thị tối đa 100 IOCs mới nhất
+                </div>
+            </div>
+
+            <!-- Bảng danh sách IOC -->
+            <div class="max-h-56 overflow-y-auto border border-slate-800 rounded-lg">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+                        <tr>
+                            <th class="p-2">ID</th>
+                            <th class="p-2">Loại</th>
+                            <th class="p-2">Giá Trị Indicator</th>
+                            <th class="p-2">Mức Độ</th>
+                            <th class="p-2">Nguồn (Source)</th>
+                            <th class="p-2">Mô Tả / Ngữ Cảnh</th>
+                            <th class="p-2">Ngày Cập Nhật</th>
+                        </tr>
+                    </thead>
+                    <tbody id="misp-table-body" class="divide-y divide-slate-800 font-mono"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 2 Khung chính: Stream CLI & Bảng Phán Quyết -->
+        <div class="grid grid-cols-2 gap-6">
+            <!-- Luồng suy luận -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col">
+                <h2 class="text-sm font-semibold text-cyan-400 uppercase mb-3 flex items-center justify-between">
+                    <span>Luồng Suy Luận, TI & Gọi Tool pfSense (Live Stream)</span>
+                    <span class="text-xs text-slate-500 font-mono">Realtime</span>
+                </h2>
+                <div id="stream-box" class="space-y-2 h-[450px] overflow-y-auto font-mono text-xs bg-black/60 p-3 rounded-lg border border-slate-800/80"></div>
+            </div>
+
+            <!-- Bảng phán quyết -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col">
+                <h2 class="text-sm font-semibold text-purple-400 uppercase mb-3 flex items-center justify-between">
+                    <span>Bảng Phán Quyết Sự Cố & MITRE ATT&CK Mapping</span>
+                    <span class="text-xs text-slate-500 font-mono">Incident Registry</span>
+                </h2>
+                <div id="decision-box" class="space-y-3 h-[450px] overflow-y-auto text-xs"></div>
             </div>
         </div>
     </div>
 
     <script>
-        async function triggerSim() {
-            await fetch('/api/simulate', {method: 'POST'});
+        function escapeHtml(text) {
+            if (!text) return '';
+            const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+            return text.toString().replace(/[&<>"']/g, m => map[m]);
         }
+
+        function toggleMispPanel() {
+            const panel = document.getElementById('misp-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                loadMispIocs();
+            }
+        }
+
+        let mispSearchTimeout = null;
+        function onMispSearchInput() {
+            if (mispSearchTimeout) clearTimeout(mispSearchTimeout);
+            mispSearchTimeout = setTimeout(() => {
+                loadMispIocs();
+            }, 300);
+        }
+
+        async function loadMispIocs() {
+            try {
+                const searchEl = document.getElementById('misp-search');
+                const searchVal = searchEl ? searchEl.value.trim() : '';
+                const url = searchVal ? `/api/misp?search=${encodeURIComponent(searchVal)}&limit=100` : '/api/misp?limit=100';
+                const res = await fetch(url);
+                const data = await res.json();
+                
+                const total = data.total !== undefined ? data.total : (Array.isArray(data) ? data.length : 0);
+                const iocs = data.iocs || (Array.isArray(data) ? data : []);
+
+                document.getElementById('misp-count').innerText = `(${total.toLocaleString()} IOCs trong Vault)`;
+                const tbody = document.getElementById('misp-table-body');
+                if (iocs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="p-3 text-center text-slate-500 font-sans">Không tìm thấy IOC nào trong kho dữ liệu.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = iocs.map(ioc => {
+                    let badgeColor = 'bg-slate-800 text-slate-300';
+                    const lvl = (ioc.threat_level || ioc.confidence || '').toLowerCase();
+                    if (lvl === 'critical') badgeColor = 'bg-rose-950 text-rose-400 border border-rose-800';
+                    else if (lvl === 'high') badgeColor = 'bg-amber-950 text-amber-400 border border-amber-800';
+                    else if (lvl === 'medium') badgeColor = 'bg-yellow-950 text-yellow-400 border border-yellow-800';
+                    else if (lvl === 'low') badgeColor = 'bg-blue-950 text-blue-400 border border-blue-800';
+
+                    let sourceBadge = 'bg-slate-800 text-slate-400';
+                    const src = ioc.source || '';
+                    if (src.includes('Lab')) sourceBadge = 'bg-emerald-950 text-emerald-400 border border-emerald-800';
+                    else if (src.includes('Feodo')) sourceBadge = 'bg-cyan-950 text-cyan-400 border border-cyan-800';
+                    else if (src.includes('URLhaus')) sourceBadge = 'bg-purple-950 text-purple-400 border border-purple-800';
+                    else if (src.includes('Ipsum')) sourceBadge = 'bg-indigo-950 text-indigo-400 border border-indigo-800';
+
+                    return `
+                        <tr class="hover:bg-slate-800/40">
+                            <td class="p-2 text-slate-400">${escapeHtml(ioc.id)}</td>
+                            <td class="p-2 text-cyan-300 font-mono text-[11px]">${escapeHtml(ioc.type)}</td>
+                            <td class="p-2 text-white font-bold select-all">${escapeHtml(ioc.value)}</td>
+                            <td class="p-2"><span class="px-2 py-0.5 rounded text-[10px] ${badgeColor}">${escapeHtml(ioc.threat_level || ioc.confidence || 'Medium')}</span></td>
+                            <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-sans ${sourceBadge}">${escapeHtml(ioc.source || 'OSINT')}</span></td>
+                            <td class="p-2 text-slate-300 font-sans text-xs max-w-xs truncate" title="${escapeHtml(ioc.comment || ioc.threat_name || '')}">${escapeHtml(ioc.comment || ioc.threat_name || '')}</td>
+                            <td class="p-2 text-slate-500 text-[11px] whitespace-nowrap">${escapeHtml(ioc.date || ioc.updated_at || '')}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error("Lỗi tải MISP IOCs:", e);
+            }
+        }
+
+        async function syncMispFeeds() {
+            const btn = document.getElementById('btn-sync-osint');
+            const originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳ Đang tải Feeds từ OSINT...</span>';
+            btn.classList.add('opacity-75', 'cursor-not-allowed');
+
+            try {
+                const res = await fetch('/api/misp/sync', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`✅ ${data.message}`);
+                    loadMispIocs();
+                } else {
+                    alert(`❌ Lỗi cập nhật: ${data.message}`);
+                }
+            } catch (e) {
+                alert(`❌ Lỗi kết nối tới server: ${e}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+                btn.classList.remove('opacity-75', 'cursor-not-allowed');
+            }
+        }
+
+        async function addMispIoc(e) {
+            e.preventDefault();
+            const type = document.getElementById('ioc-type').value;
+            const value = document.getElementById('ioc-value').value;
+            const threat_level = document.getElementById('ioc-threat').value;
+            const comment = document.getElementById('ioc-comment').value;
+
+            try {
+                const res = await fetch('/api/misp', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({type, value, threat_level, comment})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('ioc-value').value = '';
+                    document.getElementById('ioc-comment').value = '';
+                    loadMispIocs();
+                } else {
+                    alert('Lỗi: ' + data.message);
+                }
+            } catch (err) {
+                alert('Lỗi gửi request: ' + err);
+            }
+        }
+
+        async function triggerSim() {
+            const btn = document.getElementById('btn-sim');
+            btn.disabled = true;
+            btn.innerHTML = '<span>⏳ Đang gửi cảnh báo...</span>';
+            try {
+                await fetch('/api/simulate', {method: 'POST'});
+            } catch (e) {
+                console.error(e);
+            }
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<span>⚡ Bắn Cảnh Báo Giả Lập (Test TI & Qwen)</span>';
+            }, 5000);
+        }
+
+        async function clearBlocklist() {
+            if (!confirm('Bạn có chắc muốn xóa sạch toàn bộ IP trong Alias SOC_BLOCKLIST trên pfSense?')) return;
+            const btn = document.getElementById('btn-clear');
+            btn.disabled = true;
+            btn.innerText = 'Đang xóa...';
+            try {
+                await fetch('/api/clear-blocklist', {method: 'POST'});
+            } catch (e) {
+                console.error(e);
+            }
+            btn.disabled = false;
+            btn.innerText = '🧹 Xóa Sạch SOC_BLOCKLIST';
+            refresh();
+        }
+
         async function refresh() {
-            const res = await fetch('/api/state');
-            const data = await res.json();
-            document.getElementById('st-total').innerText = data.stats.total_alerts;
-            document.getElementById('st-tp').innerText = data.stats.true_positives;
-            document.getElementById('st-fp').innerText = data.stats.false_positives;
-            document.getElementById('st-blocked').innerText = data.stats.blocked_ips.join(', ') || 'Chưa có';
+            try {
+                const res = await fetch('/api/state');
+                const data = await res.json();
+                document.getElementById('st-total').innerText = data.stats.total_alerts;
+                document.getElementById('st-tp').innerText = data.stats.true_positives;
+                document.getElementById('st-fp').innerText = data.stats.false_positives;
+                document.getElementById('st-blocked').innerText = (data.stats.blocked_ips && data.stats.blocked_ips.length > 0) ? data.stats.blocked_ips.join(', ') : 'Chưa có';
 
-            document.getElementById('stream-box').innerHTML = data.reasoning_stream.map(s =>
-                `<div class="border-b border-slate-800/80 pb-1"><span class="text-slate-500">[${s.time}]</span> <span class="font-bold text-cyan-300">[${s.type}]</span> ${s.message}</div>`
-            ).join('');
+                const streamBox = document.getElementById('stream-box');
+                if (!data.reasoning_stream || data.reasoning_stream.length === 0) {
+                    streamBox.innerHTML = '<div class="h-full flex items-center justify-center text-slate-500 font-mono text-xs">[Hệ thống sẵn sàng. Đang lắng nghe sự kiện từ pfSense, Wazuh & Threat Intel...]</div>';
+                } else {
+                    streamBox.innerHTML = data.reasoning_stream.map(s => {
+                        let tagColor = 'text-cyan-300';
+                        if (s.type === 'ALERT') tagColor = 'text-yellow-400 font-bold';
+                        else if (s.type === 'THOUGHT') tagColor = 'text-purple-400';
+                        else if (s.type === 'TOOL') tagColor = 'text-indigo-400 font-semibold';
+                        else if (s.type === 'VERDICT') tagColor = 'text-rose-400 font-bold';
+                        else if (s.type === 'ERROR') tagColor = 'text-red-500 font-bold';
 
-            document.getElementById('decision-box').innerHTML = data.decisions.map(d =>
-                `<div class="p-3 bg-slate-800/70 rounded-lg border-l-4 ${d.verdict==='TRUE POSITIVE'?'border-rose-500':'border-emerald-500'}">
-                    <div class="flex justify-between font-bold">
-                        <span>${d.title} (SRC: ${d.src_ip})</span>
-                        <span class="${d.verdict==='TRUE POSITIVE'?'text-rose-400':'text-emerald-400'}">${d.verdict}</span>
-                    </div>
-                    <div class="text-slate-300 mt-1 whitespace-pre-line">${d.summary}</div>
-                </div>`
-            ).join('');
+                        return `<div class="border-b border-slate-800/80 pb-1 leading-relaxed">
+                            <span class="text-slate-500">[${escapeHtml(s.time)}]</span> 
+                            <span class="${tagColor}">[${escapeHtml(s.type)}]</span> 
+                            ${escapeHtml(s.message)}
+                        </div>`;
+                    }).join('');
+                }
+
+                const decisionBox = document.getElementById('decision-box');
+                if (!data.decisions || data.decisions.length === 0) {
+                    decisionBox.innerHTML = `
+                        <div class="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 border border-dashed border-slate-800/80 rounded-lg">
+                            <div class="text-3xl mb-2">🛡️</div>
+                            <div class="font-semibold text-slate-400">Chưa có phán quyết nào</div>
+                            <div class="text-xs text-slate-500 mt-1">Hệ thống đang trực chiến. Bấm nút <b>"Bắn Cảnh Báo Giả Lập"</b> phía trên để kiểm tra phản ứng của Qwen AI và Threat Intel.</div>
+                        </div>`;
+                } else {
+                    decisionBox.innerHTML = data.decisions.map(d => {
+                        const isTP = d.verdict === 'TRUE POSITIVE';
+                        const borderClass = isTP ? 'border-rose-500 bg-rose-950/20' : 'border-emerald-500 bg-emerald-950/20';
+                        const verdictBadge = isTP 
+                            ? '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-rose-950 text-rose-400 border border-rose-800 shadow">TRUE POSITIVE</span>'
+                            : '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 shadow">FALSE POSITIVE</span>';
+
+                        // MITRE Badges
+                        let mitreHtml = '';
+                        if (d.mitre && d.mitre.length > 0) {
+                            mitreHtml = '<div class="flex flex-wrap gap-1 mt-1.5">' + d.mitre.map(m => 
+                                `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-purple-950 text-purple-300 border border-purple-800">
+                                    🛡️ MITRE: ${escapeHtml(m)}
+                                </span>`
+                            ).join('') + '</div>';
+                        }
+
+                        // Threat Intel Summary Badge
+                        let tiHtml = '';
+                        if (d.ti_summary) {
+                            tiHtml = `<div class="mt-1.5 text-[11px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/80 px-2.5 py-1 rounded">
+                                🌐 <b>Threat Intel:</b> ${escapeHtml(d.ti_summary)}
+                            </div>`;
+                        }
+
+                        return `
+                            <div class="p-3.5 bg-slate-900/90 rounded-lg border-l-4 ${borderClass} border border-slate-800 shadow">
+                                <div class="flex justify-between items-start mb-1">
+                                    <div>
+                                        <div class="font-bold text-white text-sm">${escapeHtml(d.title)}</div>
+                                        <div class="text-xs font-mono text-slate-400 mt-0.5">
+                                            SRC: <span class="text-cyan-300 font-bold">${escapeHtml(d.src_ip)}</span> | 
+                                            Thời gian: <span class="text-slate-300">${escapeHtml(d.time)}</span> | 
+                                            Nguồn: <span class="text-slate-300">${escapeHtml(d.source)}</span>
+                                        </div>
+                                    </div>
+                                    <div>${verdictBadge}</div>
+                                </div>
+                                ${mitreHtml}
+                                ${tiHtml}
+                                <div class="text-slate-200 mt-2 whitespace-pre-line text-xs font-sans leading-relaxed border-t border-slate-800/80 pt-2 bg-slate-950/40 p-2 rounded">
+                                    ${escapeHtml(d.summary)}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            } catch (err) {
+                console.error("Lỗi cập nhật trạng thái:", err);
+            }
         }
         setInterval(refresh, 1500);
         refresh();
     </script>
 </body>
 </html>
-

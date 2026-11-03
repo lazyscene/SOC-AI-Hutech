@@ -1,0 +1,115 @@
+# ==============================================================================
+# Security & Environment Variables (DO NOT COMMIT REAL KEYS / SECRETS)
+# ==============================================================================
+.env
+.env.*
+*.env
+# Whitelist environment example template
+!/.env.example
+
+# Credentials, tokens, keys and certificates
+*.pem
+*.key
+*.crt
+*.cert
+*.cer
+*.p12
+*.pfx
+*.secret
+*.token
+id_rsa*
+*.pub
+
+# ==============================================================================
+# Runtime Databases, Threat Intel Cache & Local State
+# ==============================================================================
+# SQLite database files (stores runtime OSINT/MISP IOCs)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+agent/data/misp_vault.db
+
+# Dynamic runtime Threat Intel cache
+agent/data/ti_cache.json
+*.cache
+
+# ==============================================================================
+# Python Bytecode & Cache
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==============================================================================
+# Python Virtual Environments
+# ==============================================================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==============================================================================
+# Logs & System Runtime Dumps
+# ==============================================================================
+*.log
+logs/
+*.bak
+*.backup
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+ossec.conf.bak
+
+# ==============================================================================
+# AI Assistants, Code Agents & Tooling State
+# ==============================================================================
+.agents/
+skills-lock.json
+.claude/
+.gemini/
+
+# ==============================================================================
+# IDEs & Developer Tools
+# ==============================================================================
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# ==============================================================================
+# Operating System Artifacts
+# ==============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+

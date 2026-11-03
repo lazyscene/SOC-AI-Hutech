@@ -1,0 +1,87 @@
+{
+  "T1046": {
+    "id": "T1046",
+    "name": "Network Service Discovery",
+    "tactic": "Discovery",
+    "description": "Kẻ tấn công dò quét các cổng và dịch vụ mạng (Nmap scan, SYN scan, Port sweep) trên máy chủ hoặc dải mạng để phát hiện các cổng mở, phiên bản ứng dụng và bề mặt tấn công tiềm năng.",
+    "mitigation": "1. Khóa các cổng không cần thiết trên pfSense Firewall. 2. Bật quy tắc Suricata Drop/Alert rà quét cổng. 3. Giới hạn số lượng kết nối mới đồng thời (rate-limiting)."
+  },
+  "T1110": {
+    "id": "T1110",
+    "name": "Brute Force",
+    "tactic": "Credential Access",
+    "description": "Kẻ tấn công sử dụng các danh sách mật khẩu phổ biến hoặc thử nghiệm tổ hợp ký tự liên tục để đoán thông tin xác thực trên các giao thức như SSH, RDP, Web Login, FTP, SMB.",
+    "mitigation": "1. Thiết lập chính sách khóa tài khoản (Account Lockout) sau 5 lần nhập sai. 2. Bắt buộc xác thực đa yếu tố (MFA). 3. Tích hợp Fail2Ban hoặc tự động chặn IP qua pfSense Firewall."
+  },
+  "T1059.001": {
+    "id": "T1059.001",
+    "name": "Command and Scripting Interpreter: PowerShell",
+    "tactic": "Execution",
+    "description": "Lợi dụng trình thông dịch PowerShell trên Windows để thực thi lệnh độc hại, tải mã độc từ xa qua mạng (ví dụ: IEX DownloadString, Base64 EncodedCommand) nhằm qua mặt phần mềm diệt virus.",
+    "mitigation": "1. Bật PowerShell Constrained Language Mode và Just Enough Administration (JEA). 2. Kích hoạt Script Block Logging (Event ID 4104) để gửi về Wazuh SIEM. 3. Giới hạn quyền truy cập PowerShell cho user thông thường."
+  },
+  "T1059.003": {
+    "id": "T1059.003",
+    "name": "Command and Scripting Interpreter: Windows Command Shell",
+    "tactic": "Execution",
+    "description": "Thực thi lệnh shell cmd.exe để chạy các tiến trình hệ thống, file batch hoặc lệnh thăm dò nội bộ.",
+    "mitigation": "1. Giám sát các tiến trình con được khởi tạo từ web server (như w3wp.exe -> cmd.exe). 2. Phân quyền hạn chế thực thi cmd.exe."
+  },
+  "T1059.004": {
+    "id": "T1059.004",
+    "name": "Command and Scripting Interpreter: Unix Shell",
+    "tactic": "Execution",
+    "description": "Sử dụng sh, bash, zsh trên Linux để thực thi mã độc, tải file độc hại bằng curl/wget hoặc mở Reverse Shell về Attacker.",
+    "mitigation": "1. Giám sát hành vi thực thi lệnh shell từ người dùng dịch vụ www-data. 2. Áp dụng AppArmor / SELinux để cô lập các dịch vụ."
+  },
+  "T1190": {
+    "id": "T1190",
+    "name": "Exploit Public-Facing Application",
+    "tactic": "Initial Access",
+    "description": "Khai thác các lỗ hổng bảo mật chưa vá trên các ứng dụng hoặc dịch vụ công khai tiếp xúc với Internet (như Log4Shell, SQL Injection, Remote Code Execution, File Upload) để xâm nhập bước đầu.",
+    "mitigation": "1. Định kỳ quét và cập nhật bản vá bảo mật (Patch Management). 2. Đặt hệ thống phía sau Web Application Firewall (WAF). 3. Phân quyền người dùng tối thiểu (Least Privilege)."
+  },
+  "T1505.003": {
+    "id": "T1505.003",
+    "name": "Server Software Component: Web Shell",
+    "tactic": "Persistence",
+    "description": "Cài cắm script cửa sau (PHP, JSP, ASPX Webshell) vào thư mục web server để duy trì quyền truy cập dai dẳng và thực thi lệnh từ xa trái phép.",
+    "mitigation": "1. Bật tính năng kiểm tra tính toàn vẹn tệp (Wazuh FIM/syscheck) trên thư mục mã nguồn web. 2. Khóa quyền ghi tệp cho web application. 3. Chặn các hàm nguy hiểm như eval(), system(), exec()."
+  },
+  "T1021": {
+    "id": "T1021",
+    "name": "Remote Services",
+    "tactic": "Lateral Movement",
+    "description": "Kẻ tấn công sử dụng các giao thức quản trị từ xa hợp lệ (như SSH, RDP, SMB/WinRM) để di chuyển ngang qua các máy trạm và máy chủ khác trong mạng nội bộ.",
+    "mitigation": "1. Phân đoạn mạng (Network Segmentation), cô lập mạng Victim LAN với các máy trạm. 2. Giới hạn quyền truy cập dịch vụ quản trị chỉ từ IP Admin xác định. 3. Vô hiệu hóa giao thức SMBv1."
+  },
+  "T1040": {
+    "id": "T1040",
+    "name": "Network Sniffing",
+    "tactic": "Credential Access, Discovery",
+    "description": "Bật chế độ promiscuous mode trên card mạng để theo dõi, nghe lén và bắt trộm lưu lượng mạng nội bộ (nhất là mật khẩu và token truyền qua văn bản thô).",
+    "mitigation": "1. Bắt buộc mã hóa toàn bộ lưu lượng nội bộ (TLS/HTTPS, SSH, IPsec). 2. Giám sát cảnh báo khi card mạng chuyển sang promiscuous mode trên Wazuh."
+  },
+  "T1078": {
+    "id": "T1078",
+    "name": "Valid Accounts",
+    "tactic": "Defense Evasion, Initial Access, Persistence",
+    "description": "Kẻ tấn công có được thông tin đăng nhập hợp lệ (bằng brute force, rò rỉ credential hoặc phising) và dùng nó để đăng nhập như người dùng bình thường nhằm né tránh cảnh báo.",
+    "mitigation": "1. Bật xác thực 2 yếu tố (MFA). 2. Thiết lập giám sát cảnh báo hành vi đăng nhập bất thường theo địa lý và thời gian trên Wazuh SIEM."
+  },
+  "T1071": {
+    "id": "T1071",
+    "name": "Application Layer Protocol",
+    "tactic": "Command and Control",
+    "description": "Giao tiếp với máy chủ điều khiển C2 thông qua các giao thức mạng phổ biến như HTTP, HTTPS, DNS hoặc TLS để ngụy trang lưu lượng độc hại với lưu lượng thông thường.",
+    "mitigation": "1. Triển khai Suricata NIDS với các luật kiểm tra chữ ký C2 (Emerging Threats). 2. Sử dụng DNS Filtering để chặn truy cập tên miền C2 độc hại."
+  },
+  "T1003": {
+    "id": "T1003",
+    "name": "OS Credential Dumping",
+    "tactic": "Credential Access",
+    "description": "Trích xuất tài khoản và mật khẩu/hash từ bộ nhớ hệ điều hành (như tiến trình LSASS trên Windows bằng Mimikatz hoặc file /etc/shadow trên Linux).",
+    "mitigation": "1. Bật Windows Defender Credential Guard. 2. Giám sát truy cập tiến trình lsass.exe qua Sysmon / Wazuh EDR."
+  }
+}
+
