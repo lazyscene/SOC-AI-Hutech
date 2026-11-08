@@ -36,10 +36,8 @@ def init_misp_vault():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_iocs_source ON iocs(source);")
         conn.commit()
 
-        # Kiểm tra nếu DB chưa có dữ liệu thì nạp dữ liệu ban đầu từ misp_iocs.json
-        cursor.execute("SELECT COUNT(*) as count FROM iocs;")
-        row = cursor.fetchone()
-        if row and row["count"] == 0 and os.path.exists(LEGACY_JSON_PATH):
+        # Luôn đồng bộ các IOC mặc định từ misp_iocs.json (INSERT OR IGNORE)
+        if os.path.exists(LEGACY_JSON_PATH):
             try:
                 with open(LEGACY_JSON_PATH, "r", encoding="utf-8") as f:
                     legacy_iocs = json.load(f)
@@ -65,7 +63,6 @@ def init_misp_vault():
                         VALUES (?, ?, ?, ?, ?, ?);
                     """, seed_data)
                     conn.commit()
-                    log_event("SYSTEM", f"Đã nạp {len(seed_data)} IOCs phòng Lab ban đầu vào SQLite misp_vault.db")
             except Exception as e:
                 log_event("ERROR", f"Lỗi seed dữ liệu từ misp_iocs.json: {e}")
 

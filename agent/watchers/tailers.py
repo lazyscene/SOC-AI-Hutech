@@ -18,6 +18,13 @@ ALERT_COOLDOWN_SECONDS = 60
 # Bảng theo dõi Cooldown / Deduplication
 last_alert_time = {}
 
+# Các đường dẫn file/registry hệ thống thay đổi liên tục tạo nhiễu (OS Background Noise)
+IGNORED_FIM_PATHS = [
+    "w32time\\securetimelimits",
+    "/tmp/gdk-pixbuf-glycin-tmp.",
+    ".local/share/gvfs-metadata/"
+]
+
 def is_broadcast_or_ignored(ip_str: str) -> bool:
     """Kiểm tra IP có phải địa chỉ Broadcast, Multicast hoặc Host GPU cần bỏ qua không"""
     if not ip_str or ip_str == "unknown":
@@ -45,13 +52,22 @@ def is_broadcast_or_ignored(ip_str: str) -> bool:
     return False
 
 def should_ignore_alert(src_ip: str, dest_ip: str, full_log: str) -> bool:
-    """Bộ lọc bỏ qua toàn diện các cảnh báo Broadcast, Multicast gây nhiễu vòng lặp"""
+    """Bộ lọc bỏ qua toàn diện các cảnh báo Broadcast, Multicast và gói tin decode nhiễu"""
     if is_broadcast_or_ignored(src_ip) or is_broadcast_or_ignored(dest_ip):
         return True
 
     log_lower = (full_log or "").lower()
     broadcast_patterns = ["192.168.63.255", "255.255.255.255", "239.255.255.250", "224.0.0."]
     if any(p in log_lower for p in broadcast_patterns):
+        return True
+
+    # Bỏ qua các cảnh báo lỗi decode giao thức nội bộ của engine Suricata (không phải signature tấn công)
+    noisy_suricata_patterns = [
+        "suricata applayer detect protocol only one direction",
+        "suricata http response excessive header repetition",
+        "suricata stream "
+    ]
+    if any(p in log_lower for p in noisy_suricata_patterns):
         return True
 
     return False
@@ -132,22 +148,27 @@ def extract_hashes_and_metadata(data: dict, full_log: str = "") -> Tuple[Optiona
     file_path = None
     event_type = None
 
+    rule_groups = safe_get(data, "rule", "groups", default=[]) or []
+    is_registry_fim = "syscheck_registry" in rule_groups or str(safe_get(data, "rule", "id", default="")) == "750"
+
     syscheck = safe_get(data, "syscheck")
     if syscheck and isinstance(syscheck, dict):
         file_path = syscheck.get("path")
         event_type = syscheck.get("event")
-        for k in ["sha256_after", "sha256_before"]:
-            h = normalize_hash(syscheck.get(k))
-            if h and "sha256" not in hashes_dict:
-                hashes_dict["sha256"] = h
-        for k in ["sha1_after", "sha1_before"]:
-            h = normalize_hash(syscheck.get(k))
-            if h and "sha1" not in hashes_dict:
-                hashes_dict["sha1"] = h
-        for k in ["md5_after", "md5_before"]:
-            h = normalize_hash(syscheck.get(k))
-            if h and "md5" not in hashes_dict:
-                hashes_dict["md5"] = h
+        # Chỉ trích xuất mã hash để tra cứu VirusTotal nếu là File thực sự (không lấy checksum của giá trị Registry)
+        if not is_registry_fim and not syscheck.get("value_name"):
+            for k in ["sha256_after", "sha256_before"]:
+                h = normalize_hash(syscheck.get(k))
+                if h and "sha256" not in hashes_dict:
+                    hashes_dict["sha256"] = h
+            for k in ["sha1_after", "sha1_before"]:
+                h = normalize_hash(syscheck.get(k))
+                if h and "sha1" not in hashes_dict:
+                    hashes_dict["sha1"] = h
+            for k in ["md5_after", "md5_before"]:
+                h = normalize_hash(syscheck.get(k))
+                if h and "md5" not in hashes_dict:
+                    hashes_dict["md5"] = h
 
     win_hashes = safe_get(data, "data", "win", "eventdata", "hashes")
     if win_hashes:
@@ -168,7 +189,7 @@ def extract_hashes_and_metadata(data: dict, full_log: str = "") -> Tuple[Optiona
                 elif len(h) == 32 and "md5" not in hashes_dict:
                     hashes_dict["md5"] = h
 
-    if not hashes_dict and full_log:
+    if not hashes_dict and full_log and not is_registry_fim:
         sha256_matches = re.findall(r'\b[a-fA-F0-9]{64}\b', full_log)
         for m in sha256_matches:
             h = normalize_hash(m)
@@ -226,7 +247,13 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
     agent_ip = str(safe_get(data, "agent", "ip") or "unknown")
     syscheck = safe_get(data, "syscheck")
 
-    is_fim = (syscheck is not None) or any(g in rule_groups for g in ["syscheck", "ossec"]) or (rule_id in ["550", "553", "554"])
+    is_fim = (syscheck is not None) or ("syscheck" in rule_groups) or (rule_id in ["550", "553", "554", "750"])
+
+    # Lọc các đường dẫn FIM/Registry rác của hệ điều hành (W32Time, gvfs-metadata, gdk-pixbuf tmp)
+    if is_fim and file_path:
+        fp_lower = file_path.lower()
+        if any(ignored in fp_lower for ignored in IGNORED_FIM_PATHS):
+            return None
 
     # Xử lý FIM DELETED (Rule 553 hoặc event == deleted) (Rule 7)
     if rule_id == "553" or event_type == "deleted":
@@ -234,9 +261,14 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
         return None
 
     # Điều kiện kích hoạt phân tích (Rule 7):
-    # level >= 6 HOẶC là sự kiện FIM added/modified có chứa hash (bao gồm Rule 554 ở level 5)
+    # level >= 6 HOẶC là sự kiện FIM file added/modified có chứa hash (bao gồm Rule 554 ở level 5)
     # HOẶC các nhóm security alert
-    is_fim_add_or_mod = is_fim and (event_type in ["added", "modified"] or rule_id in ["550", "554"]) and bool(primary_hash)
+    is_fim_add_or_mod = (
+        is_fim and
+        "syscheck_registry" not in rule_groups and
+        (event_type in ["added", "modified"] or rule_id in ["550", "554"]) and
+        bool(primary_hash)
+    )
     is_security_alert = (
         any(g in rule_groups for g in ["firewall_block", "attack", "ids"]) or
         (level >= 6) or
@@ -256,7 +288,7 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
         dest_ip = str(safe_get(data, "data", "dstip") or safe_get(data, "data", "dst_ip") or data.get("dstip") or "unknown")
         victim_ip = dest_ip if is_valid_ip(dest_ip) else (agent_ip if is_valid_ip(agent_ip) else "unknown")
 
-    # Bộ lọc bỏ qua Broadcast / Multicast / Host GPU
+    # Bộ lọc bỏ qua Broadcast / Multicast / Host GPU / Suricata Protocol Decode Noise
     if should_ignore_alert(src_ip, dest_ip, full_log):
         return None
 
@@ -265,7 +297,9 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
     if is_fim:
         cooldown_key = ("fim", agent_name, file_path or "unknown", primary_hash or "none")
     else:
-        cooldown_key = ("net", rule_id, src_ip, dest_ip)
+        suricata_sid = str(safe_get(data, "data", "id") or "")
+        net_rule_key = f"{rule_id}:{suricata_sid}" if suricata_sid else rule_id
+        cooldown_key = ("net", net_rule_key, src_ip, dest_ip)
 
     last_time = last_alert_time.get(cooldown_key, 0)
     if now - last_time < ALERT_COOLDOWN_SECONDS:
@@ -281,11 +315,21 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
         "pfSense / Suricata Syslog" if any(g in rule_groups for g in ["pfsense", "suricata", "firewall_block"]) else "Wazuh SIEM"
     )
 
+    # Làm giàu tiêu đề cảnh báo Suricata bằng tên Signature thực tế trong full_log (nếu có)
+    title_str = rule.get("description", "Cảnh báo an ninh")
+    if rule_id == "100200" and full_log:
+        m_sig = re.search(r'\[\d+:\d+:\d+\]\s*([^\[]+?)\s*(?:\[Classification:\s*([^\]]+)\])?\s*\[Priority:', full_log)
+        if m_sig:
+            sig_name = m_sig.group(1).strip()
+            sig_class = (m_sig.group(2) or "").strip()
+            class_suffix = f" [{sig_class}]" if sig_class else ""
+            title_str = f"Suricata NIDS: {sig_name}{class_suffix} ({src_ip} -> {dest_ip})"
+
     event = AlertEvent(
         source=source_label,
         rule_id=rule_id,
         level=level,
-        title=rule.get("description", "Cảnh báo an ninh"),
+        title=title_str,
         agent=agent_name,
         src_ip=src_ip,
         dest_ip=dest_ip,
@@ -309,32 +353,49 @@ def tail_wazuh():
 
     log_event("SYSTEM", f"Đã kết nối luồng cảnh báo SIEM Wazuh: {WAZUH_ALERT_FILE}")
     seen_ids = deque(maxlen=500)
+    first_open = True
 
-    try:
-        with open(WAZUH_ALERT_FILE, "r", encoding="utf-8", errors="ignore") as f:
-            # Đọc lại tối đa 20 dòng gần nhất khi khởi động để ghi nhận ID đã xử lý (historical)
-            lines = f.readlines()
-            recent_lines = lines[-20:] if len(lines) > 20 else lines
-            for line in recent_lines:
-                try:
-                    data = json.loads(line)
-                    process_alert_event(data, is_historical=True, seen_ids=seen_ids)
-                except Exception:
-                    pass
+    while True:
+        try:
+            if not os.path.exists(WAZUH_ALERT_FILE):
+                time.sleep(1)
+                continue
 
-            # Di chuyển con trỏ tới cuối file để theo dõi thời gian thực
-            f.seek(0, os.SEEK_END)
+            with open(WAZUH_ALERT_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                current_ino = os.fstat(f.fileno()).st_ino
 
-            while True:
-                line = f.readline()
-                if not line:
-                    time.sleep(0.5)
-                    continue
+                if first_open:
+                    # Đọc lại tối đa 20 dòng gần nhất khi khởi động để ghi nhận ID đã xử lý (historical)
+                    lines = f.readlines()
+                    recent_lines = lines[-20:] if len(lines) > 20 else lines
+                    for line in recent_lines:
+                        try:
+                            data = json.loads(line)
+                            process_alert_event(data, is_historical=True, seen_ids=seen_ids)
+                        except Exception:
+                            pass
+                    f.seek(0, os.SEEK_END)
+                    first_open = False
 
-                try:
-                    data = json.loads(line)
-                    process_alert_event(data, is_historical=False, seen_ids=seen_ids)
-                except Exception:
-                    pass
-    except Exception as e:
-        log_event("ERROR", f"Lỗi luồng đọc Wazuh: {e}")
+                while True:
+                    line = f.readline()
+                    if not line:
+                        # Kiểm tra xem Wazuh có vừa xoay vòng (rotate) hoặc truncate file alerts.json không
+                        try:
+                            st = os.stat(WAZUH_ALERT_FILE)
+                            if st.st_ino != current_ino or st.st_size < f.tell():
+                                log_event("SYSTEM", "Phát hiện Wazuh xoay vòng file log alerts.json, tự động kết nối lại...")
+                                break
+                        except FileNotFoundError:
+                            break
+                        time.sleep(0.5)
+                        continue
+
+                    try:
+                        data = json.loads(line)
+                        process_alert_event(data, is_historical=False, seen_ids=seen_ids)
+                    except Exception:
+                        pass
+        except Exception as e:
+            log_event("ERROR", f"Lỗi luồng đọc Wazuh: {e}")
+            time.sleep(2)

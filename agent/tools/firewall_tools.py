@@ -15,6 +15,7 @@ PFSENSE_ALIAS_NAME = os.getenv("PFSENSE_ALIAS_NAME", "SOC_BLOCKLIST")
 DEFAULT_PROTECTED_IPS = [
     "127.0.0.1",
     "192.168.63.1",    # Host GPU
+    "192.168.63.134",  # pfSense WAN Interface
     "192.168.63.138",  # SOC WAN
     "192.168.171.1",   # pfSense Transit Gateway
     "192.168.171.2",   # pfSense Firewall Management
@@ -22,7 +23,8 @@ DEFAULT_PROTECTED_IPS = [
     "192.168.214.1",   # Victim LAN 1 Gateway
     "192.168.214.10",  # Victim Linux Server
     "192.168.45.1",    # Victim LAN 2 Gateway
-    "192.168.45.10"    # Victim Windows
+    "192.168.45.10",   # Victim Windows
+    "192.168.45.17"    # Victim Windows 10 Agent
 ]
 
 def get_protected_ips() -> list:

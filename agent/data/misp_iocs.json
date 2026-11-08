@@ -14,8 +14,17 @@
     "value": "192.168.63.250",
     "category": "Attribution",
     "threat_level": "High",
-    "comment": "Kali Linux Attacker host trong phòng Lab WAN (chuyên quét port Nmap và khai thác RCE).",
+    "comment": "Kali Linux Attacker host trong mạng WAN bên ngoài (chuyên quét port Nmap và khai thác RCE).",
     "date": "2026-11-01"
+  },
+  {
+    "id": "IOC-014",
+    "type": "ip-src",
+    "value": "192.168.63.140",
+    "category": "Attribution",
+    "threat_level": "High",
+    "comment": "Kali Linux Red Team / Attacker host từ mạng WAN bên ngoài (chuyên quét Nmap, dò dịch vụ và tấn công khai thác).",
+    "date": "2026-11-08"
   },
   {
     "id": "IOC-002",

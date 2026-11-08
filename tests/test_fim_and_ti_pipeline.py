@@ -371,6 +371,36 @@ class TestFimAndTiIntegration(unittest.TestCase):
         self.assertEqual(decision["verdict"], "UNKNOWN")
         self.assertEqual(STATE["stats"]["unknown"], 1)
 
+    @patch("core.controller.call_ollama")
+    @patch("core.controller.tool_block_firewall_ip")
+    def test_kali_wan_attack_triggers_block_and_true_positive(self, mock_block, mock_llm):
+        """Xác nhận khi máy Kali (192.168.63.140) tấn công quét Nmap vào Victim, hệ thống chặn IP và gắn TRUE POSITIVE"""
+        mock_block.return_value = "Thành công: Đã thêm IP 192.168.63.140 vào SOC_BLOCKLIST trên pfSense và đã Apply thay đổi."
+        mock_llm.return_value = {
+            "message": {
+                "role": "assistant",
+                "content": "Phan quyet: SUSPICIOUS\nCanh bao quet Nmap tu mang WAN."
+            }
+        }
+
+        alert_payload = {
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100200",
+            "level": 7,
+            "title": "Suricata NIDS: ET SCAN Nmap Scripting Engine User-Agent Detected [Web Application Attack] (192.168.63.140 -> 192.168.214.10)",
+            "src_ip": "192.168.63.140",
+            "dest_ip": "192.168.214.10",
+            "agent_ip": "unknown",
+            "victim_ip": "192.168.214.10"
+        }
+
+        run_agent_loop(alert_payload)
+        self.assertTrue(mock_block.called, "Phải tự động gọi tool_block_firewall_ip cho IP Kali 192.168.63.140")
+        self.assertEqual(len(STATE["decisions"]), 1)
+        decision = STATE["decisions"][0]
+        self.assertEqual(decision["verdict"], "TRUE POSITIVE")
+        self.assertEqual(STATE["stats"]["true_positives"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

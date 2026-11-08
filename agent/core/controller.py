@@ -3,8 +3,10 @@ import json
 from datetime import datetime
 from core.llm import call_ollama
 from core.parsers import parse_verdict, extract_mitre_tags, extract_ti_summary
+from core.network_utils import is_external_wan_ip
 from tools.base import TOOLS_SCHEMA, TOOLS_MAP
-from tools.threat_intel_tools import tool_check_file_hash
+from tools.threat_intel_tools import tool_check_file_hash, tool_check_ip_reputation
+from tools.firewall_tools import tool_block_firewall_ip
 from web.state import STATE, log_event
 
 def run_agent_loop(alert_summary: dict):
@@ -19,7 +21,7 @@ def run_agent_loop(alert_summary: dict):
 
     is_fim = ("syscheck" in str(alert_summary.get("source", "")).lower() or
               bool(file_path) or
-              str(alert_summary.get("rule_id")) in ["550", "554"])
+              str(alert_summary.get("rule_id")) in ["550", "554", "750"])
 
     ip_display = f"SRC: {src_ip}" if (src_ip and src_ip != "unknown") else f"Host: {victim_ip}"
     log_event("ALERT", f"Nhận cảnh báo mới: {alert_summary.get('title')} ({ip_display})")
@@ -42,21 +44,45 @@ def run_agent_loop(alert_summary: dict):
             pre_enriched_hash_result = f"[TI Hash] Lỗi khi tra cứu hash {primary_hash}: {ex}. Status: TI_ERROR / UNKNOWN"
             log_event("ERROR", pre_enriched_hash_result)
 
-    system_prompt = (
-        "Ban la AI SOC Analyst tu hanh cap cao. Khi nhan canh bao JSON tu pfSense/Suricata/Wazuh SIEM:\n"
-        "1. Kiem tra danh tieng IP bang tool_check_ip_reputation neu co IP nguon mang thuc su (src_ip khac 'unknown').\n"
-        "2. Neu co ma hash file hoac chuoi Base64, su dung ket qua Threat Intel va giai ma lenh bang tool.\n"
-        "3. TUYET DOI KHONG tu bia dat so luong engine VirusTotal khi chua co ket qua thuc te.\n"
-        "4. AN TOAN FIREWALL: Neu su kien la FIM noi bo (src_ip la 'unknown') hoac IP la may Victim/Agent, TUYET DOI KHONG goi tool_block_firewall_ip.\n"
-        "5. Chi goi tool_block_firewall_ip khi co IP tan cong ben ngoai xac thuc (True Positive).\n"
-        "6. Cuoi cung, ket luan bang tieng Viet theo dinh dang ro rang:\n"
-        "   - Phan quyet: [TRUE POSITIVE | FALSE POSITIVE | SUSPICIOUS | UNKNOWN]\n"
-        "   - MITRE ATT&CK: [Ma & Ten ky thuat neu co bang chung ro rang]\n"
-        "   - Threat Intelligence: [Ket qua TI IP/Hash]\n"
-        "   - Nguyen nhan & Bien phap: ..."
-    )
+    if is_fim or src_ip in ["unknown", None, ""]:
+        system_prompt = (
+            "Ban la AI SOC Analyst tu hanh cap cao. Day la su kien giam sat FIM / Endpoint tren may chu noi bo:\n"
+            "1. Su dung ket qua Threat Intel ma hash da duoc cung cap san (TUYET DOI KHONG tu bia dat so luong engine VirusTotal).\n"
+            "2. Neu co chuoi Base64 hoac command ma hoa, goi tool_decode_base64 de giai ma.\n"
+            "3. AN TOAN FIREWALL: Day la su kien FIM noi bo (src_ip la 'unknown'), TUYET DOI KHONG goi tool_block_firewall_ip.\n"
+            "4. Cuoi cung, ket luan bang tieng Viet theo dinh dang ro rang:\n"
+            "   - Phan quyet: [TRUE POSITIVE | FALSE POSITIVE | SUSPICIOUS | UNKNOWN]\n"
+            "   - MITRE ATT&CK: [Ma & Ten ky thuat neu co bang chung ro rang]\n"
+            "   - Threat Intelligence: [Ket qua TI Hash]\n"
+            "   - Nguyen nhan & Bien phap: ..."
+        )
+    else:
+        system_prompt = (
+            "Ban la AI SOC Analyst tu hanh cap cao. Day la canh bao TAN CONG MANG (Network IDS / Firewall) tu pfSense/Suricata/Wazuh:\n"
+            "1. Kiem tra danh tieng IP nguon tan cong (src_ip) bang tool_check_ip_reputation va tool_check_ip_context.\n"
+            "2. Neu co chuoi Base64 hoac command ma hoa, goi tool_decode_base64 de giai ma.\n"
+            "3. Chu dong tra cuu ky thuat MITRE ATT&CK bang tool_lookup_mitre_attack (vi du: T1046 cho Scan/Nmap, T1110 cho Brute Force, T1190 cho Web Attack/RCE).\n"
+            "4. HANH DONG CHAN FIREWALL BAT BUOC: Neu canh bao la hanh vi quet mang (Nmap/Scan/RDP Probe), tan cong Web, Brute-force, hoac ket noi trai phep tu IP thuoc mang WAN ben ngoai (192.168.63.x) hoac Internet (va IP nguon co Verdict MALICIOUS hoac SUSPICIOUS / ATTACKER), BAT BUOC goi ngay tool_block_firewall_ip de chan src_ip tren pfSense va ket luan TRUE POSITIVE!\n"
+            "5. AN TOAN FIREWALL: Chi chan src_ip cua ke tan cong, TUYET DOI KHONG chan victim_ip/dest_ip.\n"
+            "6. Cuoi cung, ket luan bang tieng Viet theo dinh dang ro rang:\n"
+            "   - Phan quyet: [TRUE POSITIVE | FALSE POSITIVE | SUSPICIOUS | UNKNOWN]\n"
+            "   - MITRE ATT&CK: [Ma & Ten ky thuat]\n"
+            "   - Threat Intelligence: [Ket qua TI IP/Hash]\n"
+            "   - Nguyen nhan & Bien phap: ..."
+        )
 
-    user_prompt = f"Phan tich canh bao SOC sau: {json.dumps(alert_summary, ensure_ascii=False)}"
+    # Làm gọn payload gửi cho LLM để tránh hiểu nhầm agent_ip="unknown" của Syslog là sự kiện FIM
+    prompt_payload = dict(alert_summary)
+    if not is_fim and src_ip not in ["unknown", None, ""]:
+        prompt_payload.pop("file_path", None)
+        prompt_payload.pop("event_type", None)
+        if prompt_payload.get("agent_ip") == "unknown":
+            prompt_payload.pop("agent_ip", None)
+        if not prompt_payload.get("primary_hash"):
+            prompt_payload.pop("primary_hash", None)
+            prompt_payload.pop("file_hashes", None)
+
+    user_prompt = f"Phan tich canh bao SOC sau: {json.dumps(prompt_payload, ensure_ascii=False)}"
     if pre_enriched_hash_result:
         user_prompt += f"\n[Ket qua Threat Intelligence kiem tra ma hash {primary_hash}]: {pre_enriched_hash_result}"
 
@@ -154,8 +180,21 @@ def run_agent_loop(alert_summary: dict):
     if not final_text:
         final_text = "Đã hoàn tất quá trình điều tra sự cố."
 
+    # Nếu là sự kiện mạng có src_ip hợp lệ mà Qwen chưa kịp gọi tool_check_ip_reputation, tự động bổ sung TI cho src_ip
+    if not is_fim and src_ip and src_ip != "unknown":
+        checked_src_ti = any(
+            item.get("name") == "tool_check_ip_reputation" and src_ip in str(item.get("content", ""))
+            for item in tool_history
+        )
+        if not checked_src_ti:
+            try:
+                ip_ti_res = tool_check_ip_reputation(src_ip)
+                tool_history.insert(0, {"role": "tool", "content": str(ip_ti_res), "name": "tool_check_ip_reputation"})
+            except Exception:
+                pass
+
     mitre_tags = extract_mitre_tags(final_text, alert_summary.get("mitre"), tool_history)
-    ti_summary = extract_ti_summary(tool_history)
+    ti_summary = extract_ti_summary(tool_history, preferred_ip=src_ip if not is_fim else None)
 
     verdict = parse_verdict(
         final_text,
@@ -164,6 +203,25 @@ def run_agent_loop(alert_summary: dict):
         ti_summary=ti_summary,
         primary_hash=primary_hash
     )
+
+    # Cơ chế đảm bảo thực thi chặn tự động (Deterministic SOAR Enforcement) khi phát hiện tấn công mạng từ WAN Attacker
+    if (not is_fim and not has_blocked_ip and
+            src_ip and src_ip != "unknown" and
+            src_ip not in [agent_ip, victim_ip] and
+            is_external_wan_ip(src_ip) and
+            verdict in ["TRUE POSITIVE", "SUSPICIOUS"]):
+        title_lower = (str(alert_summary.get("title", "")) + " " + str(alert_summary.get("full_log", ""))).lower()
+        is_attack_traffic = (
+            verdict == "TRUE POSITIVE" or
+            any(k in title_lower for k in ["scan", "nmap", "exploit", "attack", "blocked traffic", "brute", "sql", "rce", "shell", "terminal server"])
+        )
+        if is_attack_traffic:
+            reason_str = alert_summary.get("title", "Network Attack from External WAN")
+            log_event("THOUGHT", f"Kích hoạt SOAR tự động chặn IP tấn công ngoại vi: tool_block_firewall_ip({{\"ip\": \"{src_ip}\"}})")
+            block_res = tool_block_firewall_ip(ip=src_ip, reason=reason_str)
+            if "Thành công" in str(block_res) or "đã nằm trong danh sách chặn" in str(block_res):
+                has_blocked_ip = True
+                verdict = "TRUE POSITIVE"
 
     # Cập nhật thống kê STATE (QUY TẮC 8)
     if verdict == "TRUE POSITIVE":

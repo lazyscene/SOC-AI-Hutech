@@ -8,7 +8,7 @@ from collections import deque
 from tools.base import register_tool
 from web.state import log_event
 from core.models import normalize_hash
-from core.network_utils import classify_subnet, is_valid_ip, is_private_ip
+from core.network_utils import classify_subnet, is_valid_ip, is_private_ip, is_external_wan_ip
 from core.misp_vault import query_ioc_vault, fetch_open_misp_feeds
 
 # 1. API Keys & Cấu hình (Lấy từ biến môi trường, không để hardcode key thật)
@@ -108,6 +108,10 @@ def tool_check_ip_reputation(ip: str):
             res = (f"[TI Private IP] {clean_ip} ({subnet_desc}). "
                    f"Khớp MISP IOC nội bộ: {misp_match.get('threat_level')} - {misp_match.get('comment')} "
                    f"| Verdict: MALICIOUS (Attacker)")
+        elif is_external_wan_ip(clean_ip):
+            res = (f"[TI Private IP] {clean_ip} ({subnet_desc}). "
+                   f"IP thuộc dải mạng WAN bên ngoài (Untrusted External Host) đang kết nối/tấn công vào hệ thống bảo vệ. "
+                   f"| Verdict: SUSPICIOUS / ATTACKER")
         else:
             res = f"[TI Private IP] {clean_ip} ({subnet_desc}). Không có trong danh mục MISP IOC nội bộ. Verdict: CLEAN (Nội bộ)"
         return res[:300]
