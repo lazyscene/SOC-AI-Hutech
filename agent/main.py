@@ -10,6 +10,7 @@ from watchers.tailers import tail_wazuh
 import tools.firewall_tools
 import tools.analysis_tools
 import tools.threat_intel_tools
+import tools.wazuh_tools
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

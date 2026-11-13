@@ -20,6 +20,7 @@ from watchers.tailers import (
 )
 from tools.firewall_tools import validate_blockable_ip, tool_block_firewall_ip, get_protected_ips
 from tools.threat_intel_tools import tool_check_file_hash
+from tools.wazuh_tools import validate_target_agent, validate_quarantine_path, tool_wazuh_endpoint_response
 from web.state import STATE
 
 
@@ -248,6 +249,8 @@ class TestFimAndTiIntegration(unittest.TestCase):
         STATE["stats"]["false_positives"] = 0
         STATE["stats"]["suspicious"] = 0
         STATE["stats"]["unknown"] = 0
+        STATE["stats"]["endpoint_actions"] = []
+        STATE["endpoint_containment"] = {}
 
     @patch("core.controller.call_ollama")
     def test_fim_tool_check_file_hash_executed_once_and_in_context(self, mock_llm):
@@ -400,6 +403,109 @@ class TestFimAndTiIntegration(unittest.TestCase):
         decision = STATE["decisions"][0]
         self.assertEqual(decision["verdict"], "TRUE POSITIVE")
         self.assertEqual(STATE["stats"]["true_positives"], 1)
+
+    def test_wazuh_ar_safety_guardrails(self):
+        """Kiểm tra chốt chặn an toàn: Từ chối tác động lên Agent 000 (Manager) và tệp hệ thống cốt lõi /bin/bash"""
+        valid_mgr, msg_mgr = validate_target_agent("000")
+        self.assertFalse(valid_mgr)
+        self.assertIn("Từ chối Wazuh AR", msg_mgr)
+
+        valid_ep, _ = validate_target_agent("002")
+        self.assertTrue(valid_ep)
+
+        res_mgr = tool_wazuh_endpoint_response(agent_id="000", action="keep_isolated", reason="Test block manager")
+        self.assertIn("Từ chối Wazuh AR", res_mgr)
+
+        valid_sys_path, msg_path = validate_quarantine_path("/bin/bash")
+        self.assertFalse(valid_sys_path)
+        self.assertIn("Từ chối cách ly tệp hệ thống cốt lõi", msg_path)
+
+        valid_tmp_path, _ = validate_quarantine_path("/tmp/eicar_test.php")
+        self.assertTrue(valid_tmp_path)
+
+    @patch("core.controller.call_ollama")
+    @patch("tools.wazuh_tools.dispatch_wazuh_ar")
+    def test_two_phase_edr_fim_unexecuted_releases_isolation_keeps_quarantine(self, mock_ar, mock_llm):
+        """FIM (Rule 550, agent_id=002, /tmp/eicar_test.php, chưa thực thi) -> Phase 1 cách ly+cô lập tạm -> Phase 2 mở cô lập mạng, giữ cách ly file"""
+        mock_ar.return_value = (True, "Wazuh AR queued")
+        mock_llm.return_value = {
+            "message": {
+                "role": "assistant",
+                "content": "Phan quyet: TRUE POSITIVE\nTep EICAR nam tren dia chua thuc thi."
+            }
+        }
+
+        eicar_hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+        alert_payload = {
+            "source": "Wazuh FIM (syscheck)",
+            "rule_id": "550",
+            "level": 7,
+            "title": "Integrity checksum changed: EICAR test file",
+            "agent": "victim-linux-server",
+            "agent_id": "002",
+            "src_ip": "unknown",
+            "agent_ip": "192.168.214.10",
+            "victim_ip": "192.168.214.10",
+            "primary_hash": eicar_hash,
+            "file_path": "/tmp/eicar_test.php",
+            "event_type": "modified"
+        }
+
+        run_agent_loop(alert_payload)
+        cmds_called = [call.args[1] for call in mock_ar.call_args_list]
+        self.assertIn("!quarantine-file", cmds_called)
+        self.assertIn("!isolate-endpoint", cmds_called)
+        self.assertIn("!unisolate-endpoint", cmds_called)
+
+        containment = STATE["endpoint_containment"].get("002", {})
+        self.assertEqual(containment.get("isolation_status"), "UNISOLATED (FILE QUARANTINED)")
+        self.assertTrue(containment.get("file_quarantined"))
+        self.assertEqual(containment.get("quarantined_file"), "/tmp/eicar_test.php")
+        self.assertIn("Đã mở cô lập mạng", STATE["decisions"][0]["endpoint_response"])
+
+    @patch("core.controller.call_ollama")
+    @patch("tools.wazuh_tools.dispatch_wazuh_ar")
+    def test_two_phase_edr_executed_spreading_keeps_isolation(self, mock_ar, mock_llm):
+        """EDR (agent_id=002, có process_name và MITRE T1021 lây lan) -> Phase 1 cách ly+kill+cô lập -> Phase 2 giữ nguyên cô lập mạng"""
+        mock_ar.return_value = (True, "Wazuh AR queued")
+        mock_llm.return_value = {
+            "message": {
+                "role": "assistant",
+                "content": "Phan quyet: TRUE POSITIVE\nMITRE ATT&CK: T1021 - Remote Services\nMa doc da thuc thi va dang lay lan ngang."
+            }
+        }
+
+        eicar_hash = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+        alert_payload = {
+            "source": "Wazuh SIEM",
+            "rule_id": "92001",
+            "level": 12,
+            "title": "Suspicious Worm Process Executing Lateral Movement",
+            "agent": "victim-linux-server",
+            "agent_id": "002",
+            "src_ip": "unknown",
+            "agent_ip": "192.168.214.10",
+            "victim_ip": "192.168.214.10",
+            "primary_hash": eicar_hash,
+            "file_path": "/tmp/worm_spreader.elf",
+            "process_name": "/tmp/worm_spreader.elf",
+            "process_id": "4321",
+            "mitre": ["T1021 - Remote Services"],
+            "full_log": "execve /tmp/worm_spreader.elf lateral movement scan"
+        }
+
+        run_agent_loop(alert_payload)
+        cmds_called = [call.args[1] for call in mock_ar.call_args_list]
+        self.assertIn("!quarantine-file", cmds_called)
+        self.assertIn("!kill-process", cmds_called)
+        self.assertIn("!isolate-endpoint", cmds_called)
+        self.assertNotIn("!unisolate-endpoint", cmds_called)
+
+        containment = STATE["endpoint_containment"].get("002", {})
+        self.assertEqual(containment.get("isolation_status"), "ISOLATED (LOCKED)")
+        self.assertTrue(containment.get("file_quarantined"))
+        self.assertEqual(containment.get("killed_process"), "4321")
+        self.assertIn("Giữ khóa cô lập mạng", STATE["decisions"][0]["endpoint_response"])
 
 
 if __name__ == "__main__":

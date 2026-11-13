@@ -77,7 +77,7 @@
                 <div id="st-fp" class="text-3xl font-bold text-emerald-400 mt-1 font-mono">0</div>
             </div>
             <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs font-semibold uppercase">IP BỊ KHÓA (SOC_BLOCKLIST)</div>
+                <div class="text-slate-400 text-xs font-semibold uppercase">PHẢN ỨNG NGĂN CHẶN (PFSENSE & WAZUH AR)</div>
                 <div id="st-blocked" class="text-xs font-mono text-amber-400 mt-2 break-all max-h-12 overflow-y-auto">Chưa có</div>
             </div>
         </div>
@@ -345,7 +345,10 @@
                 document.getElementById('st-total').innerText = data.stats.total_alerts;
                 document.getElementById('st-tp').innerText = data.stats.true_positives;
                 document.getElementById('st-fp').innerText = data.stats.false_positives;
-                document.getElementById('st-blocked').innerText = (data.stats.blocked_ips && data.stats.blocked_ips.length > 0) ? data.stats.blocked_ips.join(', ') : 'Chưa có';
+                const blockedIps = (data.stats.blocked_ips && data.stats.blocked_ips.length > 0) ? data.stats.blocked_ips : [];
+                const epActions = (data.stats.endpoint_actions && data.stats.endpoint_actions.length > 0) ? data.stats.endpoint_actions : [];
+                const combinedActions = [...blockedIps.map(ip => `🔥 pfSense: ${ip}`), ...epActions.map(a => `🛡️ ${a}`)];
+                document.getElementById('st-blocked').innerText = combinedActions.length > 0 ? combinedActions.join(' | ') : 'Chưa có';
 
                 const streamBox = document.getElementById('stream-box');
                 if (!data.reasoning_stream || data.reasoning_stream.length === 0) {
@@ -424,6 +427,18 @@
                             </div>`;
                         }
 
+                        // Wazuh Active Response 2-Phase Badge
+                        let arHtml = '';
+                        if (d.endpoint_response) {
+                            const isLocked = d.endpoint_response.includes('Giữ khóa cô lập');
+                            const arStyle = isLocked
+                                ? 'text-amber-300 bg-amber-950/60 border-amber-700/80'
+                                : 'text-emerald-300 bg-emerald-950/60 border-emerald-700/80';
+                            arHtml = `<div class="mt-1.5 text-[11px] font-mono ${arStyle} border px-2.5 py-1 rounded">
+                                🛡️ <b>Wazuh Active Response (:55000):</b> ${escapeHtml(d.endpoint_response)}
+                            </div>`;
+                        }
+
                         return `
                             <div class="p-3.5 bg-slate-900/90 rounded-lg border-l-4 ${borderClass} border border-slate-800 shadow">
                                 <div class="flex justify-between items-start mb-1">
@@ -439,6 +454,7 @@
                                 </div>
                                 ${mitreHtml}
                                 ${tiHtml}
+                                ${arHtml}
                                 <div class="text-slate-200 mt-2 whitespace-pre-line text-xs font-sans leading-relaxed border-t border-slate-800/80 pt-2 bg-slate-950/40 p-2 rounded">
                                     ${escapeHtml(d.summary)}
                                 </div>

@@ -7,14 +7,23 @@ from core.network_utils import is_external_wan_ip
 from tools.base import TOOLS_SCHEMA, TOOLS_MAP
 from tools.threat_intel_tools import tool_check_file_hash, tool_check_ip_reputation
 from tools.firewall_tools import tool_block_firewall_ip
+from tools.wazuh_tools import (
+    execute_phase1_fast_containment,
+    tool_wazuh_endpoint_response,
+    validate_target_agent,
+)
 from web.state import STATE, log_event
 
 def run_agent_loop(alert_summary: dict):
     STATE["stats"]["total_alerts"] += 1
     src_ip = alert_summary.get("src_ip", "unknown")
+    agent_id = str(alert_summary.get("agent_id") or "000")
+    agent_name = str(alert_summary.get("agent") or "endpoint")
     agent_ip = alert_summary.get("agent_ip", "unknown")
     victim_ip = alert_summary.get("victim_ip", "unknown")
     file_path = alert_summary.get("file_path")
+    process_name = alert_summary.get("process_name")
+    process_id = alert_summary.get("process_id")
     primary_hash = alert_summary.get("primary_hash")
     if not primary_hash and alert_summary.get("file_hashes"):
         primary_hash = alert_summary.get("file_hashes")[0]
@@ -44,13 +53,39 @@ def run_agent_loop(alert_summary: dict):
             pre_enriched_hash_result = f"[TI Hash] Lỗi khi tra cứu hash {primary_hash}: {ex}. Status: TI_ERROR / UNKNOWN"
             log_event("ERROR", pre_enriched_hash_result)
 
-    if is_fim or src_ip in ["unknown", None, ""]:
+    # =========================================================================
+    # GIAI ĐOẠN 1 (FAST CONTAINMENT): PHẢN ỨNG TỨC THÌ TẠI MÁY TRẠM QUA WAZUH AR
+    # =========================================================================
+    is_endpoint_event = is_fim or (src_ip in ["unknown", None, ""])
+    valid_agent, _ = validate_target_agent(agent_id)
+    is_malicious_ti = bool(
+        pre_enriched_hash_result and "VERDICT: MALICIOUS" in str(pre_enriched_hash_result).upper()
+    )
+    alert_level = int(alert_summary.get("level", 0) or 0)
+
+    phase1_info = None
+    if is_endpoint_event and valid_agent and (is_malicious_ti or (alert_level >= 10 and bool(file_path))):
+        phase1_info = execute_phase1_fast_containment(
+            agent_id=agent_id,
+            agent_name=agent_name,
+            victim_ip=victim_ip,
+            file_path=file_path,
+            process_name=process_name,
+            process_id=process_id,
+            reason=alert_summary.get("title", "Phát hiện tệp/tiến trình độc hại trên Endpoint"),
+        )
+
+    if is_endpoint_event:
         system_prompt = (
-            "Ban la AI SOC Analyst tu hanh cap cao. Day la su kien giam sat FIM / Endpoint tren may chu noi bo:\n"
+            "Ban la AI SOC Analyst tu hanh cap cao. Day la su kien giam sat FIM / Endpoint EDR tren may tram:\n"
             "1. Su dung ket qua Threat Intel ma hash da duoc cung cap san (TUYET DOI KHONG tu bia dat so luong engine VirusTotal).\n"
             "2. Neu co chuoi Base64 hoac command ma hoa, goi tool_decode_base64 de giai ma.\n"
-            "3. AN TOAN FIREWALL: Day la su kien FIM noi bo (src_ip la 'unknown'), TUYET DOI KHONG goi tool_block_firewall_ip.\n"
-            "4. Cuoi cung, ket luan bang tieng Viet theo dinh dang ro rang:\n"
+            "3. AN TOAN FIREWALL: Day la su kien Endpoint noi bo (src_ip la 'unknown'), TUYET DOI KHONG goi tool_block_firewall_ip.\n"
+            "4. PHAN UNG MAY TRAM 2 GIAI DOAN (Wazuh Active Response tool_wazuh_endpoint_response):\n"
+            "   - O Giai doan 1 (neu da kich hoat), he thong da CACH LY FILE, DUNG TIEN TRINH va CO LAP MANG TAM THOI may tram.\n"
+            "   - Sau khi dieu tra log: Neu tep doc hai CHUA DUOC THUC THI (chi la FIM syscheck added/modified nam tren dia) HOAC KHONG CO KHA NANG LAY LAN NGANG, hay goi tool_wazuh_endpoint_response(action='release_isolation') de MO CO LAP MANG nhung VAN GIU CACH LY FILE.\n"
+            "   - Neu ma doc DA DUOC THUC THI (co tien trinh Sysmon/Auditd/PowerShell/Reverse shell) VA CO NGUY CO LAY LAN / KET NOI C2 (T1021, T1570, T1059), hay goi tool_wazuh_endpoint_response(action='keep_isolated') de GIU CO LAP MANG.\n"
+            "5. Cuoi cung, ket luan bang tieng Viet theo dinh dang ro rang:\n"
             "   - Phan quyet: [TRUE POSITIVE | FALSE POSITIVE | SUSPICIOUS | UNKNOWN]\n"
             "   - MITRE ATT&CK: [Ma & Ten ky thuat neu co bang chung ro rang]\n"
             "   - Threat Intelligence: [Ket qua TI Hash]\n"
@@ -85,6 +120,13 @@ def run_agent_loop(alert_summary: dict):
     user_prompt = f"Phan tich canh bao SOC sau: {json.dumps(prompt_payload, ensure_ascii=False)}"
     if pre_enriched_hash_result:
         user_prompt += f"\n[Ket qua Threat Intelligence kiem tra ma hash {primary_hash}]: {pre_enriched_hash_result}"
+    if phase1_info and phase1_info.get("executed"):
+        user_prompt += (
+            f"\n[Phan ung nhanh Giai doan 1 da thuc thi tren Agent {agent_id}]: "
+            f"Da cach ly file '{phase1_info.get('quarantined_file') or 'N/A'}', "
+            f"dung tien trinh '{phase1_info.get('killed_process') or 'N/A'}' va CO LAP MANG TAM THOI. "
+            f"Hay dieu tra xem ma doc da thuc thi va co nguy co lay lan khong de goi tool_wazuh_endpoint_response (release_isolation hoac keep_isolated)."
+        )
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -93,6 +135,7 @@ def run_agent_loop(alert_summary: dict):
 
     final_text = ""
     has_blocked_ip = False
+    phase2_action_taken = None
 
     for step in range(5):
         # Ở bước cuối cùng (step == 4), không gửi tools nữa để ép Qwen phải ra kết luận văn bản
@@ -170,6 +213,10 @@ def run_agent_loop(alert_summary: dict):
             else:
                 if fn_name in TOOLS_MAP:
                     result = TOOLS_MAP[fn_name](**fn_args)
+                    if fn_name == "tool_wazuh_endpoint_response":
+                        chosen_act = str(fn_args.get("action", "")).strip().lower()
+                        if chosen_act in ["release_isolation", "keep_isolated"]:
+                            phase2_action_taken = chosen_act
                 else:
                     result = f"Ham {fn_name} khong ton tai."
 
@@ -223,6 +270,66 @@ def run_agent_loop(alert_summary: dict):
                 has_blocked_ip = True
                 verdict = "TRUE POSITIVE"
 
+    # =========================================================================
+    # GIAI ĐOẠN 2 (POST-INVESTIGATION ENFORCEMENT): GIỮ HOẶC MỞ CÔ LẬP MÁY TRẠM
+    # =========================================================================
+    endpoint_response_summary = None
+    if valid_agent and is_endpoint_event and (phase1_info or verdict == "TRUE POSITIVE"):
+        if not phase1_info:
+            phase1_info = execute_phase1_fast_containment(
+                agent_id=agent_id,
+                agent_name=agent_name,
+                victim_ip=victim_ip,
+                file_path=file_path,
+                process_name=process_name,
+                process_id=process_id,
+                reason=alert_summary.get("title", "Phát hiện mối đe dọa TRUE POSITIVE trên Endpoint"),
+            )
+
+        if not phase2_action_taken:
+            text_corpus = (
+                str(alert_summary.get("source", "")) + " " +
+                str(alert_summary.get("title", "")) + " " +
+                str(alert_summary.get("full_log", "")) + " " +
+                " ".join(mitre_tags or [])
+            ).lower()
+            has_process_evidence = bool(process_name or process_id) or any(
+                k in text_corpus
+                for k in ["sysmon", "execve", "command_line", "powershell", "reverse shell", "worm", "ransomware", "lateral movement"]
+            )
+            has_spreading_mitre = any(
+                tid in " ".join(mitre_tags or []).upper()
+                for tid in ["T1021", "T1570", "T1059", "T1071", "T1053"]
+            )
+            is_pure_static_fim = (
+                is_fim and
+                (alert_summary.get("event_type") in ["added", "modified"]) and
+                not (process_name or process_id)
+            )
+            is_executed_and_spreading = (has_process_evidence or has_spreading_mitre) and not is_pure_static_fim
+
+            if is_executed_and_spreading:
+                tool_wazuh_endpoint_response(
+                    agent_id=agent_id,
+                    action="keep_isolated",
+                    file_path=file_path or "",
+                    reason="Mã độc đã thực thi và có nguy cơ lây lan mạng / C2",
+                )
+                phase2_action_taken = "keep_isolated"
+            else:
+                tool_wazuh_endpoint_response(
+                    agent_id=agent_id,
+                    action="release_isolation",
+                    file_path=file_path or "",
+                    reason="Tệp độc hại chưa thực thi / không có hành vi lây lan -> Mở cô lập mạng, giữ cách ly file",
+                )
+                phase2_action_taken = "release_isolation"
+
+        if phase2_action_taken == "keep_isolated":
+            endpoint_response_summary = f"⚡ Phase 1: Cách ly & Cô lập tạm thời Agent {agent_id} -> 🔒 Phase 2: Giữ khóa cô lập mạng"
+        elif phase2_action_taken == "release_isolation":
+            endpoint_response_summary = f"⚡ Phase 1: Cách ly & Cô lập tạm thời Agent {agent_id} -> 🔓 Phase 2: Đã mở cô lập mạng (Vẫn giữ cách ly file)"
+
     # Cập nhật thống kê STATE (QUY TẮC 8)
     if verdict == "TRUE POSITIVE":
         STATE["stats"]["true_positives"] += 1
@@ -239,6 +346,7 @@ def run_agent_loop(alert_summary: dict):
         "source": alert_summary.get("source", "pfSense / Wazuh SIEM"),
         "title": alert_summary.get("title", "Cảnh báo an ninh"),
         "src_ip": src_ip,
+        "agent_id": agent_id,
         "agent_ip": agent_ip,
         "victim_ip": victim_ip,
         "primary_hash": primary_hash,
@@ -246,5 +354,6 @@ def run_agent_loop(alert_summary: dict):
         "verdict": verdict,
         "mitre": mitre_tags,
         "ti_summary": ti_summary,
+        "endpoint_response": endpoint_response_summary,
         "summary": final_text
     })

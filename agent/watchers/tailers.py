@@ -243,9 +243,22 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
     # Bóc tách Hash & File Metadata (Rule 3)
     primary_hash, file_hashes, file_path, event_type = extract_hashes_and_metadata(data, full_log)
 
+    agent_id = str(safe_get(data, "agent", "id") or "000")
     agent_name = str(safe_get(data, "agent", "name") or "unknown")
     agent_ip = str(safe_get(data, "agent", "ip") or "unknown")
     syscheck = safe_get(data, "syscheck")
+
+    process_name = (
+        safe_get(data, "syscheck", "audit", "process", "name") or
+        safe_get(data, "data", "win", "eventdata", "image") or
+        safe_get(data, "data", "audit", "exe")
+    )
+    raw_pid = (
+        safe_get(data, "syscheck", "audit", "process", "id") or
+        safe_get(data, "data", "win", "eventdata", "processId") or
+        safe_get(data, "data", "audit", "pid")
+    )
+    process_id = str(raw_pid) if raw_pid is not None else None
 
     is_fim = (syscheck is not None) or ("syscheck" in rule_groups) or (rule_id in ["550", "553", "554", "750"])
 
@@ -331,6 +344,7 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
         level=level,
         title=title_str,
         agent=agent_name,
+        agent_id=agent_id,
         src_ip=src_ip,
         dest_ip=dest_ip,
         agent_ip=agent_ip,
@@ -340,7 +354,9 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
         file_hashes=file_hashes,
         mitre_ids=mitre_info,
         file_path=file_path,
-        event_type=event_type
+        event_type=event_type,
+        process_name=process_name,
+        process_id=process_id
     )
 
     # Chạy vòng lặp phân tích AI trên thread riêng

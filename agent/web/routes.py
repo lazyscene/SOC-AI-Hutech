@@ -14,6 +14,7 @@ router = APIRouter()
 def get_state():
     return {
         "stats": STATE["stats"],
+        "endpoint_containment": STATE.get("endpoint_containment", {}),
         "reasoning_stream": list(STATE["reasoning_stream"]),
         "decisions": list(STATE["decisions"])
     }
@@ -40,6 +41,8 @@ def simulate_attack():
 @router.post("/api/clear-blocklist")
 def clear_blocklist():
     success, msg = clear_all_pfsense_blocks()
+    STATE["stats"]["endpoint_actions"] = []
+    STATE["endpoint_containment"] = {}
     return {"success": success, "message": msg}
 
 @router.post("/api/unblock")

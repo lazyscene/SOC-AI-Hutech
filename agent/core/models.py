@@ -47,6 +47,7 @@ class AlertEvent:
     level: int
     title: str
     agent: str
+    agent_id: str = "000"
     src_ip: Optional[str] = "unknown"
     dest_ip: Optional[str] = "unknown"
     agent_ip: str = "unknown"
@@ -57,6 +58,8 @@ class AlertEvent:
     mitre_ids: List[str] = field(default_factory=list)
     file_path: Optional[str] = None
     event_type: Optional[str] = None
+    process_name: Optional[str] = None
+    process_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -65,6 +68,7 @@ class AlertEvent:
             "level": self.level,
             "title": self.title,
             "agent": self.agent,
+            "agent_id": self.agent_id or "000",
             "src_ip": self.src_ip or "unknown",
             "dest_ip": self.dest_ip or "unknown",
             "agent_ip": self.agent_ip or "unknown",
@@ -74,6 +78,8 @@ class AlertEvent:
             "mitre": self.mitre_ids if self.mitre_ids else None,
             "file_path": self.file_path,
             "event_type": self.event_type,
+            "process_name": self.process_name,
+            "process_id": self.process_id,
             "full_log": (self.full_log or "")[:350]
         }
 

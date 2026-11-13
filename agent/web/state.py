@@ -8,8 +8,10 @@ STATE = {
         "false_positives": 0,
         "suspicious": 0,
         "unknown": 0,
-        "blocked_ips": []
+        "blocked_ips": [],
+        "endpoint_actions": []
     },
+    "endpoint_containment": {},
     "reasoning_stream": deque(maxlen=50),
     "decisions": deque(maxlen=30)
 }
