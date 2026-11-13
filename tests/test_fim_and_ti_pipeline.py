@@ -1,8 +1,12 @@
 import os
 import sys
 import json
+import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
+
+# Tắt ghi đè file soc_state.json thật trong quá trình chạy unit test
+os.environ["SOC_DISABLE_STATE_PERSISTENCE"] = "1"
 
 # Add 'agent' directory to sys.path so modules import seamlessly
 AGENT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "agent"))
@@ -18,10 +22,21 @@ from watchers.tailers import (
     extract_hashes_and_metadata,
     last_alert_time
 )
-from tools.firewall_tools import validate_blockable_ip, tool_block_firewall_ip, get_protected_ips
-from tools.threat_intel_tools import tool_check_file_hash
+from tools.firewall_tools import (
+    validate_blockable_ip,
+    tool_block_firewall_ip,
+    get_protected_ips,
+    sync_pfsense_blocklist,
+)
+from tools.analysis_tools import tool_check_ip_context
+from tools.threat_intel_tools import tool_check_file_hash, tool_check_ip_reputation
 from tools.wazuh_tools import validate_target_agent, validate_quarantine_path, tool_wazuh_endpoint_response
-from web.state import STATE
+from web.state import (
+    STATE,
+    save_persistent_state,
+    load_persistent_state,
+    get_agent_memory_context,
+)
 
 
 class TestFimAndSysmonUnit(unittest.TestCase):
@@ -249,7 +264,9 @@ class TestFimAndTiIntegration(unittest.TestCase):
         STATE["stats"]["false_positives"] = 0
         STATE["stats"]["suspicious"] = 0
         STATE["stats"]["unknown"] = 0
+        STATE["stats"]["blocked_ips"] = []
         STATE["stats"]["endpoint_actions"] = []
+        STATE["pfsense_block_details"] = {}
         STATE["endpoint_containment"] = {}
 
     @patch("core.controller.call_ollama")
@@ -506,6 +523,84 @@ class TestFimAndTiIntegration(unittest.TestCase):
         self.assertTrue(containment.get("file_quarantined"))
         self.assertEqual(containment.get("killed_process"), "4321")
         self.assertIn("Giữ khóa cô lập mạng", STATE["decisions"][0]["endpoint_response"])
+
+    def test_pfsense_sync_and_already_blocked_ip_updates_state(self):
+        """sync_pfsense_blocklist() nạp IP từ pfSense và tool_block_firewall_ip cập nhật STATE kể cả khi IP đã có sẵn"""
+        mock_alias = {
+            "id": 1,
+            "name": "SOC_BLOCKLIST",
+            "address": ["192.168.63.140", "192.168.63.200"],
+            "detail": ["AI SOC blocked: Nmap Scan", "AI SOC blocked: Brute Force"],
+        }
+        with patch("tools.firewall_tools.get_or_create_soc_alias", return_value=mock_alias):
+            ok, synced = sync_pfsense_blocklist(quiet=False)
+            self.assertTrue(ok)
+            self.assertEqual(synced, ["192.168.63.140", "192.168.63.200"])
+            self.assertEqual(STATE["stats"]["blocked_ips"], ["192.168.63.140", "192.168.63.200"])
+            self.assertEqual(STATE["pfsense_block_details"]["192.168.63.140"], "AI SOC blocked: Nmap Scan")
+
+            # Mô phỏng STATE bị rỗng lại (như vừa restart) nhưng pfSense đã có sẵn IP -> gọi block không bị sót STATE
+            STATE["stats"]["blocked_ips"] = []
+            STATE["pfsense_block_details"] = {}
+            msg = tool_block_firewall_ip("192.168.63.140", "Repeated Nmap")
+            self.assertIn("đã nằm trong danh sách chặn", msg)
+            self.assertIn("192.168.63.140", STATE["stats"]["blocked_ips"])
+            self.assertIn("192.168.63.200", STATE["stats"]["blocked_ips"])
+
+    def test_cross_tool_memory_context_and_state_persistence(self):
+        """Kiểm tra trí nhớ pfSense/Wazuh/Incident cho tool & controller và lưu/khôi phục soc_state.json"""
+        STATE["stats"]["blocked_ips"] = ["192.168.63.140"]
+        STATE["pfsense_block_details"] = {"192.168.63.140": "AI SOC blocked: Nmap Scan"}
+        STATE["endpoint_containment"]["002"] = {
+            "agent_id": "002",
+            "isolation_status": "UNISOLATED (FILE QUARANTINED)",
+            "quarantined_files": ["/tmp/eicar.php"],
+            "killed_processes": [],
+        }
+        STATE["decisions"].appendleft({
+            "time": "14:00:00",
+            "src_ip": "192.168.63.140",
+            "agent_id": "000",
+            "verdict": "TRUE POSITIVE",
+            "title": "Previous Nmap Scan",
+        })
+
+        # 1. Kiểm tra tool_check_ip_context và tool_check_ip_reputation có gắn nhãn trí nhớ pfSense
+        ctx_out = tool_check_ip_context("192.168.63.140")
+        self.assertIn("ĐÃ CHẶN trong SOC_BLOCKLIST", ctx_out)
+        self.assertIn("TRUE POSITIVE 1 lần", ctx_out)
+
+        rep_out = tool_check_ip_reputation("192.168.63.140")
+        self.assertIn("[pfSense: ĐÃ CHẶN trong SOC_BLOCKLIST]", rep_out)
+
+        # 2. Kiểm tra get_agent_memory_context tổng hợp cả 3 nguồn
+        mem_net = get_agent_memory_context(src_ip="192.168.63.140")
+        self.assertIn("pfSense Memory", mem_net)
+        self.assertIn("Incident History Memory", mem_net)
+
+        mem_ep = get_agent_memory_context(src_ip="unknown", agent_id="002", file_path="/tmp/eicar.php")
+        self.assertIn("Wazuh AR Memory", mem_ep)
+        self.assertIn("/tmp/eicar.php", mem_ep)
+
+        # 3. Kiểm tra lưu & khôi phục persistent state với file tạm
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_state_file = os.path.join(tmpdir, "soc_state.json")
+            with patch.dict(os.environ, {"SOC_DISABLE_STATE_PERSISTENCE": "0"}):
+                saved = save_persistent_state(state_file=temp_state_file)
+                self.assertTrue(saved)
+
+                # Xóa sạch STATE trên RAM như vừa khởi động lại
+                STATE["stats"]["blocked_ips"] = []
+                STATE["pfsense_block_details"] = {}
+                STATE["endpoint_containment"] = {}
+                STATE["decisions"].clear()
+
+                loaded = load_persistent_state(state_file=temp_state_file)
+                self.assertTrue(loaded)
+                self.assertEqual(STATE["stats"]["blocked_ips"], ["192.168.63.140"])
+                self.assertEqual(STATE["pfsense_block_details"]["192.168.63.140"], "AI SOC blocked: Nmap Scan")
+                self.assertEqual(STATE["endpoint_containment"]["002"]["isolation_status"], "UNISOLATED (FILE QUARANTINED)")
+                self.assertEqual(len(STATE["decisions"]), 1)
 
 
 if __name__ == "__main__":

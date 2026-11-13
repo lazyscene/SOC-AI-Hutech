@@ -5,7 +5,7 @@ from typing import Optional, List, Tuple, Dict, Any
 import requests
 import urllib3
 from tools.base import register_tool
-from web.state import STATE, log_event
+from web.state import STATE, log_event, save_persistent_state
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -239,6 +239,7 @@ def execute_phase1_fast_containment(
         clean_agent,
         f"Agent {clean_agent}: Cách ly file & Cô lập tạm thời ({victim_ip})",
     )
+    save_persistent_state()
 
     log_event(
         "ACTION",
@@ -337,6 +338,7 @@ def tool_wazuh_endpoint_response(
             clean_agent,
             f"Agent {clean_agent}: Mở cô lập mạng (Giữ cách ly {target_file or 'file'})",
         )
+        save_persistent_state()
         log_event(
             "ACTION",
             f"🔓 [PHASE 2 - RELEASE ISOLATION] Agent {clean_agent}: Mã độc chưa thực thi / không lây lan -> "
@@ -359,6 +361,7 @@ def tool_wazuh_endpoint_response(
             clean_agent,
             f"Agent {clean_agent}: Khóa cô lập mạng & Cách ly {target_file or 'file'}",
         )
+        save_persistent_state()
         log_event(
             "ACTION",
             f"🔒 [PHASE 2 - KEEP ISOLATED] Agent {clean_agent}: Mã độc ĐÃ THỰC THI / CÓ NGUY CƠ LÂY LAN -> "

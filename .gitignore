@@ -32,8 +32,9 @@ id_rsa*
 *.db-wal
 agent/data/misp_vault.db
 
-# Dynamic runtime Threat Intel cache
+# Dynamic runtime Threat Intel cache & persistent state
 agent/data/ti_cache.json
+agent/data/soc_state.json
 *.cache
 
 # ==============================================================================

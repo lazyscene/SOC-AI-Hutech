@@ -12,7 +12,7 @@ from tools.wazuh_tools import (
     tool_wazuh_endpoint_response,
     validate_target_agent,
 )
-from web.state import STATE, log_event
+from web.state import STATE, log_event, get_agent_memory_context, save_persistent_state
 
 def run_agent_loop(alert_summary: dict):
     STATE["stats"]["total_alerts"] += 1
@@ -118,6 +118,14 @@ def run_agent_loop(alert_summary: dict):
             prompt_payload.pop("file_hashes", None)
 
     user_prompt = f"Phan tich canh bao SOC sau: {json.dumps(prompt_payload, ensure_ascii=False)}"
+    memory_ctx = get_agent_memory_context(
+        src_ip=src_ip,
+        agent_id=agent_id,
+        file_path=file_path,
+        primary_hash=primary_hash,
+    )
+    if memory_ctx:
+        user_prompt += f"\n{memory_ctx}"
     if pre_enriched_hash_result:
         user_prompt += f"\n[Ket qua Threat Intelligence kiem tra ma hash {primary_hash}]: {pre_enriched_hash_result}"
     if phase1_info and phase1_info.get("executed"):
@@ -134,7 +142,13 @@ def run_agent_loop(alert_summary: dict):
     ]
 
     final_text = ""
-    has_blocked_ip = False
+    has_blocked_ip = (
+        not is_fim and
+        bool(src_ip) and
+        src_ip != "unknown" and
+        src_ip not in [agent_ip, victim_ip] and
+        src_ip in STATE.get("stats", {}).get("blocked_ips", [])
+    )
     phase2_action_taken = None
 
     for step in range(5):
@@ -357,3 +371,4 @@ def run_agent_loop(alert_summary: dict):
         "endpoint_response": endpoint_response_summary,
         "summary": final_text
     })
+    save_persistent_state()

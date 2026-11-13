@@ -4,8 +4,8 @@ import threading
 from datetime import datetime
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
-from web.state import STATE
-from tools.firewall_tools import clear_all_pfsense_blocks, tool_unblock_firewall_ip
+from web.state import STATE, save_persistent_state
+from tools.firewall_tools import clear_all_pfsense_blocks, tool_unblock_firewall_ip, sync_pfsense_blocklist
 from core.misp_vault import get_ioc_records, add_ioc_record, fetch_open_misp_feeds
 
 router = APIRouter()
@@ -43,7 +43,17 @@ def clear_blocklist():
     success, msg = clear_all_pfsense_blocks()
     STATE["stats"]["endpoint_actions"] = []
     STATE["endpoint_containment"] = {}
+    save_persistent_state()
     return {"success": success, "message": msg}
+
+@router.post("/api/pfsense/sync")
+def sync_pfsense():
+    success, blocked_ips = sync_pfsense_blocklist(quiet=False)
+    return {
+        "success": success,
+        "blocked_ips": blocked_ips,
+        "message": f"Đã đồng bộ {len(blocked_ips)} IP từ pfSense SOC_BLOCKLIST." if success else "Không thể kết nối tới pfSense API."
+    }
 
 @router.post("/api/unblock")
 def unblock_ip(payload: dict):

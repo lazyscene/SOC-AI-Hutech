@@ -6,7 +6,7 @@ import ipaddress
 import requests
 from collections import deque
 from tools.base import register_tool
-from web.state import log_event
+from web.state import STATE, log_event
 from core.models import normalize_hash
 from core.network_utils import classify_subnet, is_valid_ip, is_private_ip, is_external_wan_ip
 from core.misp_vault import query_ioc_vault, fetch_open_misp_feeds
@@ -91,6 +91,14 @@ IP_REPUTATION_SCHEMA = {
     }
 }
 
+def _append_pfsense_memory_tag(clean_ip: str, result_str: str) -> str:
+    """Gắn nhãn trạng thái đã chặn trên pfSense nếu IP đang nằm trong SOC_BLOCKLIST."""
+    blocked_ips = STATE.get("stats", {}).get("blocked_ips", [])
+    if clean_ip in blocked_ips and "[pfSense:" not in result_str:
+        return f"{result_str} [pfSense: ĐÃ CHẶN trong SOC_BLOCKLIST]"
+    return result_str
+
+
 @register_tool(IP_REPUTATION_SCHEMA)
 def tool_check_ip_reputation(ip: str):
     clean_ip = (ip or "").strip()
@@ -114,13 +122,13 @@ def tool_check_ip_reputation(ip: str):
                    f"| Verdict: SUSPICIOUS / ATTACKER")
         else:
             res = f"[TI Private IP] {clean_ip} ({subnet_desc}). Không có trong danh mục MISP IOC nội bộ. Verdict: CLEAN (Nội bộ)"
-        return res[:300]
+        return _append_pfsense_memory_tag(clean_ip, res[:300])
 
     # 3. Public IP -> Kiểm tra Cache
     cache_key = f"ip:{clean_ip}"
     cached_val = get_cached(cache_key)
     if cached_val:
-        return cached_val
+        return _append_pfsense_memory_tag(clean_ip, cached_val)
 
     # 4. Gọi AbuseIPDB API v2
     abuse_score = 0
@@ -183,7 +191,7 @@ def tool_check_ip_reputation(ip: str):
     if abuse_success or vt_success:
         set_cached(cache_key, result)
 
-    return result
+    return _append_pfsense_memory_tag(clean_ip, result)
 
 # ==========================================
 # TOOL 2: CHECK FILE HASH
