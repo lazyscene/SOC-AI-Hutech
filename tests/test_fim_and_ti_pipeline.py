@@ -15,7 +15,15 @@ if AGENT_DIR not in sys.path:
 
 from core.models import AlertEvent, safe_get, normalize_hash
 from core.parsers import parse_verdict, extract_mitre_tags, extract_ti_summary
-from core.controller import run_agent_loop
+from core.controller import run_agent_loop, replay_case_alerts
+from core.case_manager import (
+    ingest_alert_into_case,
+    finalize_case_analysis,
+    correlate_cross_domain_cases,
+    close_expired_cases,
+    compute_worst_verdict,
+    update_case_status,
+)
 from watchers.tailers import (
     process_alert_event,
     extract_sysmon_hashes,
@@ -266,8 +274,13 @@ class TestFimAndTiIntegration(unittest.TestCase):
         STATE["stats"]["unknown"] = 0
         STATE["stats"]["blocked_ips"] = []
         STATE["stats"]["endpoint_actions"] = []
+        STATE["stats"]["total_cases"] = 0
+        STATE["stats"]["active_cases"] = 0
         STATE["pfsense_block_details"] = {}
         STATE["endpoint_containment"] = {}
+        STATE["agent_ip_registry"] = {}
+        STATE["cases"] = []
+        STATE["parent_incidents"] = []
 
     @patch("core.controller.call_ollama")
     def test_fim_tool_check_file_hash_executed_once_and_in_context(self, mock_llm):
@@ -601,6 +614,206 @@ class TestFimAndTiIntegration(unittest.TestCase):
                 self.assertEqual(STATE["pfsense_block_details"]["192.168.63.140"], "AI SOC blocked: Nmap Scan")
                 self.assertEqual(STATE["endpoint_containment"]["002"]["isolation_status"], "UNISOLATED (FILE QUARANTINED)")
                 self.assertEqual(len(STATE["decisions"]), 1)
+
+
+class TestCaseManagement(unittest.TestCase):
+    """Bộ kiểm thử hệ thống Alerts & Case Management (Correlation, Kill-Chain, Lifecycle & Worst-Verdict)"""
+
+    def setUp(self):
+        STATE["decisions"].clear()
+        STATE["reasoning_stream"].clear()
+        STATE["stats"]["total_alerts"] = 0
+        STATE["stats"]["true_positives"] = 0
+        STATE["stats"]["false_positives"] = 0
+        STATE["stats"]["suspicious"] = 0
+        STATE["stats"]["unknown"] = 0
+        STATE["stats"]["total_cases"] = 0
+        STATE["stats"]["active_cases"] = 0
+        STATE["stats"]["blocked_ips"] = []
+        STATE["stats"]["endpoint_actions"] = []
+        STATE["pfsense_block_details"] = {}
+        STATE["endpoint_containment"] = {}
+        STATE["agent_ip_registry"] = {}
+        STATE["cases"] = []
+        STATE["parent_incidents"] = []
+
+    @patch("core.controller.call_ollama")
+    @patch("core.controller.tool_block_firewall_ip")
+    def test_network_case_correlation_by_src_ip_and_slm_deduplication(self, mock_block, mock_llm):
+        """Kali Nmap vào nhiều victim_ip gom chung 1 Case NETWORK theo src_ip; chỉ gọi SLM khi có tình tiết mới"""
+        mock_block.return_value = "Thành công: Đã thêm IP 192.168.63.140 vào SOC_BLOCKLIST"
+        mock_llm.return_value = {
+            "message": {
+                "role": "assistant",
+                "content": "Phan quyet: TRUE POSITIVE\nMITRE ATT&CK: T1046 - Network Service Discovery\nPhat hien quet cong Nmap."
+            }
+        }
+
+        # 3 alert Nmap liên tiếp từ cùng 1 src_ip vào các victim khác nhau (cùng rule + MITRE T1046)
+        for idx, victim in enumerate(["192.168.214.10", "192.168.45.10", "192.168.45.17"], start=1):
+            run_agent_loop({
+                "source": "pfSense / Suricata Syslog",
+                "rule_id": "100200",
+                "level": 7,
+                "title": f"Suricata NIDS: ET SCAN Nmap #{idx}",
+                "src_ip": "192.168.63.140",
+                "dest_ip": victim,
+                "victim_ip": victim,
+                "mitre": ["T1046 - Network Service Discovery"],
+            })
+
+        self.assertEqual(len(STATE["cases"]), 1, "Tất cả alert mạng cùng src_ip phải gom về 1 Case duy nhất")
+        net_case = STATE["cases"][0]
+        self.assertEqual(net_case["domain"], "NETWORK")
+        self.assertEqual(net_case["src_ip"], "192.168.63.140")
+        self.assertEqual(net_case["alert_count"], 3)
+        self.assertEqual(len(net_case["incident_alerts"]), 3, "Phải lưu đủ 3 alert gốc để kiểm toán & replay")
+        self.assertEqual(set(net_case["victim_ips"]), {"192.168.214.10", "192.168.45.10", "192.168.45.17"})
+        self.assertEqual(mock_llm.call_count, 1, "Chỉ gọi SLM 1 lần cho alert đầu tiên khi các alert sau trùng loại")
+
+        # Xuất hiện alert kỹ thuật mới (T1190 Exploit) từ cùng src_ip -> phải gọi lại SLM cập nhật Case
+        run_agent_loop({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100205",
+            "level": 10,
+            "title": "Suricata NIDS: ET EXPLOIT Apache RCE Attempt",
+            "src_ip": "192.168.63.140",
+            "dest_ip": "192.168.214.10",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1190 - Exploit Public-Facing Application"],
+        })
+        self.assertEqual(len(STATE["cases"]), 1)
+        self.assertEqual(STATE["cases"][0]["alert_count"], 4)
+        self.assertEqual(mock_llm.call_count, 2, "Phải gọi lại SLM khi có rule_id/MITRE mới")
+
+    def test_case_worst_verdict_and_fp_reopen_rule(self):
+        """Kiểm tra Verdict theo mức 'xấu nhất' và Case đã đóng FP không âm thầm gộp alert bất thường mới"""
+        self.assertEqual(compute_worst_verdict(["FALSE POSITIVE", "FALSE POSITIVE"]), "FALSE POSITIVE")
+        self.assertEqual(compute_worst_verdict(["FALSE POSITIVE", "SUSPICIOUS"]), "SUSPICIOUS")
+        self.assertEqual(compute_worst_verdict(["FALSE POSITIVE", "UNKNOWN", "TRUE POSITIVE"]), "TRUE POSITIVE")
+
+        # Tạo Case mạng ban đầu và gán verdict FALSE POSITIVE rồi đóng
+        res1 = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100100",
+            "level": 3,
+            "title": "Low noise event",
+            "src_ip": "192.168.63.199",
+            "victim_ip": "192.168.214.10",
+        }, now_ts=1000.0)
+        case1 = res1["case"]
+        finalize_case_analysis(case1["id"], verdict="FALSE POSITIVE")
+        self.assertEqual(case1["verdict"], "FALSE POSITIVE")
+        update_case_status(case1["id"], "CLOSED", reason="Xác nhận nhiễu vô hại")
+
+        # Alert bất thường mới từ cùng IP -> Phải tạo Case mới ghi nhận reopened_from_case_id, không gộp chìm vào Case FP cũ
+        res2 = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100250",
+            "level": 10,
+            "title": "ET EXPLOIT Critical RCE Attempt",
+            "src_ip": "192.168.63.199",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1190"],
+        }, now_ts=1200.0)
+        case2 = res2["case"]
+        self.assertNotEqual(case2["id"], case1["id"])
+        self.assertEqual(case2["reopened_from_case_id"], case1["id"])
+        self.assertEqual(case1["alert_count"], 1, "Case FP cũ tuyệt đối không bị sửa thêm alert mới")
+
+    def test_case_lifecycle_idle_timeout_and_max_duration(self):
+        """Kiểm tra đóng Case sau 30 phút idle (1800s) và tách Case mới khi quá trần 4 giờ (14400s)"""
+        t0 = 1000000.0
+        res1 = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100200",
+            "level": 7,
+            "title": "Scan wave 1",
+            "src_ip": "192.168.63.150",
+            "victim_ip": "192.168.214.10",
+        }, now_ts=t0)
+        case1_id = res1["case"]["id"]
+
+        # Sau 31 phút không có alert mới -> close_expired_cases phải tự động đóng CASE-0001
+        closed = close_expired_cases(now_ts=t0 + 1860)
+        self.assertEqual(closed, 1)
+        self.assertEqual(res1["case"]["status"], "CLOSED")
+        self.assertIn("Idle timeout", res1["case"]["close_reason"])
+
+        # Kiểm tra trần thời lượng 4 giờ (14400s): gửi đều mỗi 20 phút (<30 phút idle) đến khi vượt 4 giờ
+        res2 = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100200",
+            "level": 7,
+            "title": "Persistent Attack Start",
+            "src_ip": "192.168.63.151",
+            "victim_ip": "192.168.214.10",
+        }, now_ts=t0)
+        res2["case"]["last_alert_ts"] = t0 + 14300  # vẫn còn trong idle timeout (chỉ cách 150s tới t0+14450)
+        res3 = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100200",
+            "level": 7,
+            "title": "After 4h Ceiling",
+            "src_ip": "192.168.63.151",
+            "victim_ip": "192.168.214.10",
+        }, now_ts=t0 + 14450)
+        self.assertEqual(res2["case"]["status"], "CLOSED")
+        self.assertIn("4 giờ", res2["case"]["close_reason"])
+        self.assertNotEqual(res3["case"]["id"], res2["case"]["id"], "Quá trần 4 giờ phải tách sang Case mới")
+
+    def test_cross_domain_related_cases_and_parent_incident(self):
+        """Thỏa đủ 3 điều kiện (trùng IP victim↔agent, trong 30 phút, chuỗi Kill-Chain) -> tạo Related Cases & Parent Incident"""
+        base_ts = 2000000.0
+        # 1. Case Mạng: Attacker khai thác máy Victim Linux qua IP nội bộ (hoặc NAT WAN 192.168.63.134)
+        net_info = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100210",
+            "level": 10,
+            "title": "Suricata NIDS: ET EXPLOIT Web Shell Upload Attempt",
+            "src_ip": "192.168.63.140",
+            "dest_ip": "192.168.63.134",  # NAT WAN IP ánh xạ về agent 002 (192.168.214.10)
+            "victim_ip": "192.168.63.134",
+            "mitre": ["T1190 - Exploit Public-Facing Application"],
+        }, now_ts=base_ts)
+        net_case = net_info["case"]
+        net_case["verdict"] = "TRUE POSITIVE"
+        net_case["actions_taken"].append("pfSense Block IP 192.168.63.140")
+
+        # 2. Sau 5 phút (300s <= 1800s), Case Endpoint trên agent 002 (192.168.214.10) phát hiện thả webshell + thực thi shell
+        ep_info = ingest_alert_into_case({
+            "source": "Wazuh FIM (syscheck)",
+            "rule_id": "554",
+            "level": 8,
+            "title": "Webshell created and executed on victim",
+            "agent": "victim-linux-server",
+            "agent_id": "002",
+            "src_ip": "unknown",
+            "agent_ip": "192.168.214.10",
+            "victim_ip": "192.168.214.10",
+            "file_path": "/var/www/html/shell.php",
+            "primary_hash": "131f95c51cc819465fa1797f6ccacf9d494aaaff46fa3eac73ae63ffbdfd8267",
+            "process_name": "/bin/sh",
+            "mitre": ["T1059 - Command and Scripting Interpreter"],
+        }, now_ts=base_ts + 300.0)
+        ep_case = ep_info["case"]
+        ep_case["verdict"] = "SUSPICIOUS"
+        ep_case["actions_taken"].append("Wazuh AR Quarantine /var/www/html/shell.php")
+
+        incidents = correlate_cross_domain_cases(now_ts=base_ts + 301.0)
+        self.assertEqual(len(incidents), 1, "Phải tự động tạo 1 Incident Cha liên kết 2 miền")
+        parent_inc = STATE["parent_incidents"][0]
+        self.assertEqual(parent_inc["severity"], "CRITICAL")
+        self.assertEqual(set(parent_inc["child_case_ids"]), {net_case["id"], ep_case["id"]})
+        self.assertIn(ep_case["id"], net_case["related_case_ids"])
+        self.assertIn(net_case["id"], ep_case["related_case_ids"])
+
+        # Case con giữ nguyên verdict và hành động riêng, nhưng severity được nâng lên CRITICAL
+        self.assertEqual(net_case["verdict"], "TRUE POSITIVE")
+        self.assertEqual(ep_case["verdict"], "SUSPICIOUS")
+        self.assertEqual(net_case["severity"], "CRITICAL")
+        self.assertEqual(ep_case["severity"], "CRITICAL")
+        self.assertEqual(len(parent_inc["combined_timeline"]), 2)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import threading
 from collections import deque
 from typing import Optional, List, Tuple, Dict
 from core.controller import run_agent_loop
+from core.case_manager import register_agent_ip
 from core.models import AlertEvent, safe_get, normalize_hash
 from core.network_utils import is_valid_ip
 from web.state import log_event
@@ -305,8 +306,11 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
     if should_ignore_alert(src_ip, dest_ip, full_log):
         return None
 
-    # Cơ chế Analysis Cooldown (Rule 7)
+    # Cơ chế Analysis Cooldown (Rule 7):
+    # - Với FIM giữ nguyên cooldown 60s cho cặp (agent, file, hash)
+    # - Với cảnh báo mạng dùng ngưỡng 2s để luồng alert hợp lệ đi qua Case Manager gom nhóm & đếm số lượng mà không lặp SLM
     now = time.time()
+    cooldown_window = ALERT_COOLDOWN_SECONDS if is_fim else 2
     if is_fim:
         cooldown_key = ("fim", agent_name, file_path or "unknown", primary_hash or "none")
     else:
@@ -315,9 +319,12 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
         cooldown_key = ("net", net_rule_key, src_ip, dest_ip)
 
     last_time = last_alert_time.get(cooldown_key, 0)
-    if now - last_time < ALERT_COOLDOWN_SECONDS:
+    if now - last_time < cooldown_window:
         return None
     last_alert_time[cooldown_key] = now
+
+    if agent_id not in ["000", "unknown", "none", ""] and is_valid_ip(agent_ip):
+        register_agent_ip(agent_id, agent_ip, agent_name)
 
     if len(last_alert_time) > 1000:
         last_alert_time.clear()

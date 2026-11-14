@@ -93,6 +93,7 @@ ossec.conf.bak
 skills-lock.json
 .claude/
 .gemini/
+inspiration-only-no-copy/
 
 # ==============================================================================
 # IDEs & Developer Tools

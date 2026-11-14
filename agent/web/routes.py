@@ -7,17 +7,60 @@ from fastapi.responses import HTMLResponse
 from web.state import STATE, save_persistent_state
 from tools.firewall_tools import clear_all_pfsense_blocks, tool_unblock_firewall_ip, sync_pfsense_blocklist
 from core.misp_vault import get_ioc_records, add_ioc_record, fetch_open_misp_feeds
+from core.case_manager import (
+    close_expired_cases,
+    get_case_by_id,
+    update_case_status,
+)
 
 router = APIRouter()
 
 @router.get("/api/state")
 def get_state():
+    close_expired_cases()
     return {
         "stats": STATE["stats"],
         "endpoint_containment": STATE.get("endpoint_containment", {}),
+        "agent_ip_registry": STATE.get("agent_ip_registry", {}),
+        "cases": STATE.get("cases", []),
+        "parent_incidents": STATE.get("parent_incidents", []),
         "reasoning_stream": list(STATE["reasoning_stream"]),
         "decisions": list(STATE["decisions"])
     }
+
+@router.get("/api/cases")
+def get_cases(domain: str = "", status: str = ""):
+    close_expired_cases()
+    cases = list(STATE.get("cases", []))
+    if domain:
+        d_up = domain.strip().upper()
+        cases = [c for c in cases if c.get("domain") == d_up]
+    if status:
+        s_up = status.strip().upper()
+        cases = [c for c in cases if c.get("status") == s_up]
+    return {
+        "cases": cases,
+        "parent_incidents": STATE.get("parent_incidents", []),
+        "agent_ip_registry": STATE.get("agent_ip_registry", {}),
+    }
+
+@router.post("/api/cases/{case_id}/status")
+def set_case_status(case_id: str, payload: dict):
+    new_status = payload.get("status", "")
+    reason = payload.get("reason", "")
+    ok, updated_case, msg = update_case_status(case_id, new_status, reason)
+    return {"success": ok, "case": updated_case, "message": msg}
+
+@router.post("/api/cases/{case_id}/replay")
+def replay_case(case_id: str):
+    from core.controller import replay_case_alerts
+    case_obj = get_case_by_id(case_id)
+    if not case_obj:
+        return {"success": False, "message": f"Không tìm thấy Case {case_id}."}
+    if not case_obj.get("incident_alerts"):
+        return {"success": False, "message": f"Case {case_id} chưa có alert gốc để replay."}
+    threading.Thread(target=replay_case_alerts, args=(case_id,), daemon=True).start()
+    return {"success": True, "message": f"Đã kích hoạt Replay phân tích lại {case_id} từ {len(case_obj['incident_alerts'])} alerts gốc."}
 
 @router.post("/api/simulate")
 def simulate_attack():

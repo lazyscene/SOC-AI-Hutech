@@ -23,6 +23,10 @@
                 <p class="text-sm text-slate-400 mt-1">pfSense Firewall REST API v2 + Wazuh SIEM + Threat Intel (VirusTotal, AbuseIPDB, MISP IOC) + Qwen LLM Core</p>
             </div>
             <div class="flex items-center space-x-3">
+                <button id="btn-toggle-cases" onclick="toggleCasePanel()" class="bg-cyan-900/60 hover:bg-cyan-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-cyan-700 text-cyan-200 shadow flex items-center space-x-1.5">
+                    <span>🗂️ Alerts & Case Management</span>
+                    <span id="btn-case-count" class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 font-mono text-[10px] border border-cyan-700">0</span>
+                </button>
                 <button id="btn-toggle-misp" onclick="toggleMispPanel()" class="bg-purple-900/60 hover:bg-purple-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-purple-700 text-purple-200 shadow flex items-center space-x-1">
                     <span>📑 Quản Lý MISP IOC</span>
                 </button>
@@ -163,6 +167,38 @@
             </div>
         </div>
 
+        <!-- Alerts & Case Management Panel (Collapsible) -->
+        <div id="case-panel" class="hidden bg-slate-900 border border-cyan-800/60 rounded-xl p-4 space-y-4">
+            <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-2 gap-2">
+                <div class="flex items-center space-x-2">
+                    <span class="text-cyan-400 font-bold text-sm">🗂️ QUẢN LÝ HỒ SƠ SỰ CỐ (ALERTS & CASE MANAGEMENT)</span>
+                    <span id="case-summary-count" class="text-xs font-mono text-slate-400">(0 Cases | 0 Incidents Cha)</span>
+                </div>
+                <div class="flex items-center space-x-2 text-xs">
+                    <select id="case-filter-domain" onchange="renderCasesFromCache()" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                        <option value="">Tất cả Miền (ALL)</option>
+                        <option value="NETWORK">Miền Mạng (NETWORK)</option>
+                        <option value="ENDPOINT">Miền Máy Trạm (ENDPOINT)</option>
+                    </select>
+                    <select id="case-filter-status" onchange="renderCasesFromCache()" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                        <option value="">Tất cả Trạng thái</option>
+                        <option value="OPEN">Đang mở (OPEN)</option>
+                        <option value="CLOSED">Đã đóng (CLOSED)</option>
+                    </select>
+                    <button onclick="toggleCasePanel()" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Đóng</button>
+                </div>
+            </div>
+
+            <!-- Parent Incidents (Liên kết Kill-Chain Mạng <-> Endpoint) -->
+            <div id="parent-incidents-section" class="hidden space-y-2">
+                <div class="text-xs font-bold text-rose-400 uppercase tracking-wider">🔗 Chuỗi Tấn Công Đa Miền (Parent Incidents / Related Cases)</div>
+                <div id="parent-incidents-list" class="space-y-2"></div>
+            </div>
+
+            <!-- Danh sách Cases -->
+            <div id="cases-list" class="space-y-2.5 max-h-[480px] overflow-y-auto pr-1 text-xs"></div>
+        </div>
+
         <!-- 2 Khung chính: Stream CLI & Bảng Phán Quyết -->
         <div class="grid grid-cols-2 gap-6">
             <!-- Luồng suy luận -->
@@ -198,6 +234,189 @@
             if (!panel.classList.contains('hidden')) {
                 loadMispIocs();
             }
+        }
+
+        let cachedCasesData = { cases: [], parent_incidents: [] };
+        const expandedCaseIds = new Set();
+
+        function toggleCasePanel() {
+            const panel = document.getElementById('case-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                renderCasesFromCache();
+            }
+        }
+
+        function toggleCaseDetails(caseId) {
+            if (expandedCaseIds.has(caseId)) {
+                expandedCaseIds.delete(caseId);
+            } else {
+                expandedCaseIds.add(caseId);
+            }
+            renderCasesFromCache();
+        }
+
+        async function changeCaseStatus(caseId, newStatus) {
+            try {
+                const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus, reason: newStatus === 'CLOSED' ? 'Đóng từ Web UI SOC' : 'Mở lại từ Web UI SOC' })
+                });
+                const data = await res.json();
+                if (!data.success) alert('❌ ' + (data.message || 'Lỗi cập nhật trạng thái Case'));
+                await refresh();
+            } catch (e) {
+                alert('❌ Lỗi kết nối: ' + e);
+            }
+        }
+
+        async function replayCase(caseId) {
+            try {
+                const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/replay`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`🔄 ${data.message}`);
+                } else {
+                    alert(`❌ ${data.message}`);
+                }
+                await refresh();
+            } catch (e) {
+                alert('❌ Lỗi Replay Case: ' + e);
+            }
+        }
+
+        function renderCasesFromCache() {
+            const cases = cachedCasesData.cases || [];
+            const parentIncidents = cachedCasesData.parent_incidents || [];
+            const domainFilter = (document.getElementById('case-filter-domain')?.value || '').toUpperCase();
+            const statusFilter = (document.getElementById('case-filter-status')?.value || '').toUpperCase();
+
+            document.getElementById('case-summary-count').innerText = `(${cases.length} Cases | ${parentIncidents.length} Parent Incidents)`;
+
+            const parentSection = document.getElementById('parent-incidents-section');
+            const parentList = document.getElementById('parent-incidents-list');
+            if (parentIncidents.length === 0) {
+                parentSection.classList.add('hidden');
+                parentList.innerHTML = '';
+            } else {
+                parentSection.classList.remove('hidden');
+                parentList.innerHTML = parentIncidents.map(inc => {
+                    const timelineHtml = (inc.combined_timeline || []).slice(-6).map(t =>
+                        `<div class="text-[11px] font-mono text-slate-300 border-l-2 border-rose-700 pl-2 py-0.5">
+                            [${escapeHtml(t.time)}] <span class="text-cyan-300">${escapeHtml(t.case_id)}</span> (${escapeHtml(t.domain)}) — ${escapeHtml(t.title)}
+                        </div>`
+                    ).join('');
+                    return `
+                        <div class="p-3 rounded-lg bg-rose-950/30 border border-rose-700/70 space-y-1.5">
+                            <div class="flex justify-between items-center">
+                                <div class="font-bold text-rose-300 text-xs">🔗 ${escapeHtml(inc.id)}: ${escapeHtml(inc.title)}</div>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-900 text-rose-200 border border-rose-600">${escapeHtml(inc.severity)}</span>
+                            </div>
+                            <div class="text-[11px] font-mono text-slate-300">
+                                Kill-Chain: ${escapeHtml(inc.kill_chain_summary)} | Child Cases: <span class="text-amber-300">${escapeHtml((inc.child_case_ids || []).join(', '))}</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400">${escapeHtml((inc.escalation_reasons || []).join(' | '))}</div>
+                            <div class="space-y-0.5 pt-1">${timelineHtml}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            const filtered = cases.filter(c => {
+                if (domainFilter && c.domain !== domainFilter) return false;
+                if (statusFilter && c.status !== statusFilter) return false;
+                return true;
+            });
+
+            const listEl = document.getElementById('cases-list');
+            if (filtered.length === 0) {
+                listEl.innerHTML = '<div class="p-4 text-center text-slate-500 border border-dashed border-slate-800 rounded-lg">Chưa có hồ sơ Case nào khớp bộ lọc.</div>';
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(c => {
+                const isExpanded = expandedCaseIds.has(c.id);
+                const sevColors = {
+                    'CRITICAL': 'bg-rose-950 text-rose-300 border-rose-700',
+                    'HIGH': 'bg-amber-950 text-amber-300 border-amber-700',
+                    'MEDIUM': 'bg-yellow-950 text-yellow-300 border-yellow-700',
+                    'LOW': 'bg-slate-800 text-slate-300 border-slate-700'
+                };
+                const sevClass = sevColors[c.severity] || sevColors['LOW'];
+                const verdictColors = {
+                    'TRUE POSITIVE': 'bg-rose-900/80 text-rose-200 border-rose-600',
+                    'SUSPICIOUS': 'bg-amber-900/80 text-amber-200 border-amber-600',
+                    'FALSE POSITIVE': 'bg-emerald-900/80 text-emerald-200 border-emerald-600',
+                    'UNKNOWN': 'bg-slate-800 text-slate-300 border-slate-600'
+                };
+                const vClass = verdictColors[c.verdict] || verdictColors['UNKNOWN'];
+                const statusBadge = c.status === 'CLOSED'
+                    ? '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">CLOSED</span>'
+                    : '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-700">OPEN</span>';
+                const domainBadge = c.domain === 'NETWORK'
+                    ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800">NETWORK</span>'
+                    : '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-950 text-purple-300 border border-purple-800">ENDPOINT</span>';
+
+                const targetDisplay = c.domain === 'NETWORK'
+                    ? `Attacker: <span class="text-rose-300 font-bold">${escapeHtml(c.src_ip)}</span> → Victims: <span class="text-amber-300">${escapeHtml((c.victim_ips || []).join(', ') || 'N/A')}</span>`
+                    : `Agent: <span class="text-purple-300 font-bold">${escapeHtml(c.agent_id)}</span> (${escapeHtml((c.victim_ips || []).join(', ') || 'N/A')})`;
+
+                const relatedHtml = (c.related_case_ids && c.related_case_ids.length > 0)
+                    ? `<span class="ml-2 px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono text-[10px]">🔗 Related: ${escapeHtml(c.related_case_ids.join(', '))} ${c.parent_incident_id ? '(' + escapeHtml(c.parent_incident_id) + ')' : ''}</span>`
+                    : '';
+
+                const toggleActionStatus = c.status === 'CLOSED'
+                    ? `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'OPEN')" class="px-2 py-1 rounded bg-emerald-900/70 hover:bg-emerald-800 text-emerald-200 border border-emerald-700 text-[11px]">🔓 Mở lại</button>`
+                    : `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'CLOSED')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-[11px]">🔒 Đóng Case</button>`;
+
+                let detailsHtml = '';
+                if (isExpanded) {
+                    const alertsRows = (c.incident_alerts || []).slice().reverse().map((a, idx) =>
+                        `<div class="border-b border-slate-800/80 py-1 font-mono text-[11px] flex justify-between gap-2">
+                            <span class="text-slate-300">#${(c.incident_alerts.length - idx)} [${escapeHtml(a.captured_at || '')}] Rule ${escapeHtml(a.rule_id || '?')} (Lv.${escapeHtml(a.level || 0)}) — ${escapeHtml(a.title || '')}</span>
+                            <span class="text-slate-400 shrink-0">${escapeHtml(a.src_ip !== 'unknown' ? (a.src_ip + ' → ' + a.victim_ip) : (a.file_path || a.victim_ip))}</span>
+                        </div>`
+                    ).join('');
+                    const escHtml = (c.escalation_reasons && c.escalation_reasons.length > 0)
+                        ? `<div class="text-[11px] text-amber-300 bg-amber-950/30 border border-amber-800/60 p-2 rounded"><b>Lý do nâng mức / Vòng đời:</b><br>${c.escalation_reasons.map(r => '• ' + escapeHtml(r)).join('<br>')}</div>`
+                        : '';
+                    detailsHtml = `
+                        <div class="mt-2 pt-2 border-t border-slate-800 space-y-2 bg-slate-950/60 p-2.5 rounded">
+                            ${escHtml}
+                            <div class="text-[11px] font-semibold text-cyan-300">📜 Danh sách Alert gốc đã gom (${(c.incident_alerts || []).length} alerts lưu kiểm toán):</div>
+                            <div class="max-h-40 overflow-y-auto">${alertsRows || '<div class="text-slate-500">Không có dữ liệu alert</div>'}</div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="p-3 bg-slate-950/70 border border-slate-800 rounded-lg space-y-1.5">
+                        <div class="flex flex-wrap justify-between items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="font-mono font-bold text-white">${escapeHtml(c.id)}</span>
+                                ${domainBadge}
+                                ${statusBadge}
+                                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${sevClass}">${escapeHtml(c.severity)}</span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${vClass}">${escapeHtml(c.verdict)}</span>
+                                ${relatedHtml}
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[11px] font-mono text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">Alerts: <b>${c.alert_count}</b> | SLM: <b>${c.slm_calls}</b></span>
+                                <button onclick="toggleCaseDetails('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-cyan-900/60 hover:bg-cyan-800 text-cyan-200 border border-cyan-700 text-[11px]">${isExpanded ? '▲ Thu gọn' : '▼ Chi tiết'}</button>
+                                <button onclick="replayCase('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700 text-[11px]">🔄 Replay</button>
+                                ${toggleActionStatus}
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-200 font-semibold">${escapeHtml(c.title)}</div>
+                        <div class="text-[11px] font-mono text-slate-400">
+                            ${targetDisplay} | Tạo lúc: ${escapeHtml(c.created_at)} | Cập nhật: ${escapeHtml(c.updated_at)}
+                            ${c.close_reason ? ` | Đóng: <span class="text-slate-300">${escapeHtml(c.close_reason)}</span>` : ''}
+                        </div>
+                        ${detailsHtml}
+                    </div>
+                `;
+            }).join('');
         }
 
         let mispSearchTimeout = null;
@@ -345,6 +564,19 @@
                 document.getElementById('st-total').innerText = data.stats.total_alerts;
                 document.getElementById('st-tp').innerText = data.stats.true_positives;
                 document.getElementById('st-fp').innerText = data.stats.false_positives;
+                cachedCasesData = {
+                    cases: data.cases || [],
+                    parent_incidents: data.parent_incidents || []
+                };
+                const openCaseCount = (data.cases || []).filter(c => c.status !== 'CLOSED').length;
+                const caseCountBadge = document.getElementById('btn-case-count');
+                if (caseCountBadge) {
+                    caseCountBadge.innerText = openCaseCount;
+                }
+                const casePanel = document.getElementById('case-panel');
+                if (casePanel && !casePanel.classList.contains('hidden')) {
+                    renderCasesFromCache();
+                }
                 const blockedIps = (data.stats.blocked_ips && data.stats.blocked_ips.length > 0) ? data.stats.blocked_ips : [];
                 const epActions = (data.stats.endpoint_actions && data.stats.endpoint_actions.length > 0) ? data.stats.endpoint_actions : [];
                 const combinedActions = [...blockedIps.map(ip => `🔥 pfSense: ${ip}`), ...epActions.map(a => `🛡️ ${a}`)];
@@ -357,6 +589,7 @@
                     streamBox.innerHTML = data.reasoning_stream.map(s => {
                         let tagColor = 'text-cyan-300';
                         if (s.type === 'ALERT') tagColor = 'text-yellow-400 font-bold';
+                        else if (s.type === 'CASE') tagColor = 'text-amber-300 font-semibold';
                         else if (s.type === 'THOUGHT') tagColor = 'text-purple-400';
                         else if (s.type === 'TOOL') tagColor = 'text-indigo-400 font-semibold';
                         else if (s.type === 'VERDICT') tagColor = 'text-rose-400 font-bold';
@@ -443,7 +676,7 @@
                             <div class="p-3.5 bg-slate-900/90 rounded-lg border-l-4 ${borderClass} border border-slate-800 shadow">
                                 <div class="flex justify-between items-start mb-1">
                                     <div>
-                                        <div class="font-bold text-white text-sm">${escapeHtml(d.title)}</div>
+                                        <div class="font-bold text-white text-sm">${d.case_id ? `<span class="text-cyan-400 font-mono text-xs mr-1">[${escapeHtml(d.case_id)}]</span>` : ''}${escapeHtml(d.title)}</div>
                                         <div class="text-xs font-mono text-slate-400 mt-0.5">
                                             ${ipInfoHtml} | 
                                             Thời gian: <span class="text-slate-300">${escapeHtml(d.time)}</span> | 
