@@ -23,6 +23,13 @@ from core.case_manager import (
     close_expired_cases,
     compute_worst_verdict,
     update_case_status,
+    build_and_save_case_graph,
+)
+from core.asset_manager import (
+    ensure_default_assets,
+    get_assets_with_case_counts,
+    upsert_asset,
+    delete_asset,
 )
 from watchers.tailers import (
     process_alert_event,
@@ -281,6 +288,8 @@ class TestFimAndTiIntegration(unittest.TestCase):
         STATE["agent_ip_registry"] = {}
         STATE["cases"] = []
         STATE["parent_incidents"] = []
+        STATE["assets"] = []
+        STATE["dismissed_asset_agents"] = []
 
     @patch("core.controller.call_ollama")
     def test_fim_tool_check_file_hash_executed_once_and_in_context(self, mock_llm):
@@ -636,6 +645,8 @@ class TestCaseManagement(unittest.TestCase):
         STATE["agent_ip_registry"] = {}
         STATE["cases"] = []
         STATE["parent_incidents"] = []
+        STATE["assets"] = []
+        STATE["dismissed_asset_agents"] = []
 
     @patch("core.controller.call_ollama")
     @patch("core.controller.tool_block_firewall_ip")
@@ -814,6 +825,168 @@ class TestCaseManagement(unittest.TestCase):
         self.assertEqual(net_case["severity"], "CRITICAL")
         self.assertEqual(ep_case["severity"], "CRITICAL")
         self.assertEqual(len(parent_inc["combined_timeline"]), 2)
+
+    def test_on_demand_case_graph_generation_and_persistence(self):
+        """Graph không tự vẽ real-time; chỉ dựng khi gọi On-Demand và lưu bền vững qua soc_state.json"""
+        eicar_hash = "131f95c51cc819465fa1797f6ccacf9d494aaaff46fa3eac73ae63ffbdfd8267"
+        ep_info = ingest_alert_into_case({
+            "source": "Wazuh FIM (syscheck)",
+            "rule_id": "554",
+            "level": 10,
+            "title": "Malicious Webshell & Reverse Shell Detected",
+            "agent": "victim-linux-server",
+            "agent_id": "002",
+            "src_ip": "unknown",
+            "agent_ip": "192.168.214.10",
+            "victim_ip": "192.168.214.10",
+            "file_path": "/var/www/html/shell.php",
+            "event_type": "added",
+            "primary_hash": eicar_hash,
+            "process_name": "/bin/bash",
+            "process_id": "9981",
+            "mitre": ["T1059 - Command and Scripting Interpreter"],
+        }, now_ts=3000000.0)
+        ep_case = ep_info["case"]
+        # 1. Mặc định chưa có attack_graph (không vẽ real-time tốn tài nguyên)
+        self.assertIsNone(ep_case.get("attack_graph"))
+
+        STATE["endpoint_containment"]["002"] = {
+            "agent_id": "002",
+            "victim_ip": "192.168.214.10",
+            "isolation_status": "ISOLATED (LOCKED)",
+        }
+        finalize_case_analysis(
+            ep_case["id"],
+            verdict="TRUE POSITIVE",
+            mitre_tags=["T1059 - Command and Scripting Interpreter"],
+            ti_summary="MISP EICAR Malicious",
+            endpoint_response="Phase 2: ISOLATED (LOCKED)",
+        )
+        # Vẫn chưa tự vẽ graph sau finalize
+        self.assertIsNone(ep_case.get("attack_graph"))
+
+        # 2. Kích hoạt vẽ On-Demand
+        ok, graph, msg = build_and_save_case_graph(ep_case["id"])
+        self.assertTrue(ok, msg)
+        self.assertIsNotNone(graph)
+        self.assertEqual(graph["case_id"], ep_case["id"])
+        self.assertEqual(graph["generated_at_alert_count"], 1)
+
+        node_types = {n["type"] for n in graph["nodes"]}
+        self.assertIn("vector", node_types)
+        self.assertIn("target", node_types)
+        self.assertIn("artifact_file", node_types)
+        self.assertIn("artifact_hash", node_types)
+        self.assertIn("artifact_proc", node_types)
+        self.assertIn("soar_action", node_types)
+        self.assertGreater(len(graph["edges"]), 0)
+        self.assertIn("192.168.214.10", graph["attack_path_summary"])
+
+        # 3. Kiểm tra lưu & khôi phục graph bền vững qua persistent state
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_state_file = os.path.join(tmpdir, "soc_state.json")
+            with patch.dict(os.environ, {"SOC_DISABLE_STATE_PERSISTENCE": "0"}):
+                self.assertTrue(save_persistent_state(state_file=temp_state_file))
+                STATE["cases"] = []
+                self.assertTrue(load_persistent_state(state_file=temp_state_file))
+                self.assertEqual(len(STATE["cases"]), 1)
+                restored_graph = STATE["cases"][0].get("attack_graph")
+                self.assertIsNotNone(restored_graph)
+                self.assertEqual(len(restored_graph["nodes"]), len(graph["nodes"]))
+                self.assertEqual(len(restored_graph["edges"]), len(graph["edges"]))
+
+    def test_asset_manager_crud_and_case_counting(self):
+        """Kiểm tra khởi tạo 5 thiết bị Lab mặc định, thêm/sửa/xóa Asset và đếm Case tự động theo thiết bị"""
+        defaults = ensure_default_assets()
+        self.assertEqual(len(defaults), 5)
+        self.assertTrue(any(a["name"] == "pfSense Firewall Gateway" and "firewall" in a["labels"] and a["owner"] == "NetSec Team" for a in defaults))
+        self.assertTrue(any(a["name"] == "Victim Windows 10 Workstation" and "máy trạm" in a["labels"] and a["owner"] == "IT Operations" for a in defaults))
+
+        # Thêm thiết bị mới qua upsert_asset
+        ok, new_asset, msg = upsert_asset({
+            "name": "Internal GitLab Server",
+            "ip": "192.168.214.25",
+            "agent_id": "004",
+            "labels": "linux, server, git",
+            "owner": "DevOps Team",
+        })
+        self.assertTrue(ok, msg)
+        self.assertEqual(new_asset["name"], "Internal GitLab Server")
+        self.assertEqual(new_asset["labels"], ["linux", "server", "git"])
+        self.assertEqual(new_asset["owner"], "DevOps Team")
+        self.assertEqual(new_asset["case_count"], 0)
+
+        # Tạo Network Case nhắm vào 192.168.214.10 và Endpoint Case trên agent_id=002
+        net_info = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100300",
+            "level": 10,
+            "title": "ET WEB_SERVER Shell Upload Attempt",
+            "src_ip": "192.168.63.145",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1190"],
+        }, now_ts=4000000.0)
+        ep_info = ingest_alert_into_case({
+            "source": "Wazuh FIM (syscheck)",
+            "rule_id": "554",
+            "level": 8,
+            "title": "Webshell created in /var/www/html",
+            "agent": "victim-linux-server",
+            "agent_id": "002",
+            "src_ip": "unknown",
+            "agent_ip": "192.168.214.10",
+            "victim_ip": "192.168.214.10",
+            "file_path": "/var/www/html/cmd.php",
+            "event_type": "added",
+        }, now_ts=4000100.0)
+        net_id = net_info["case"]["id"]
+        ep_id = ep_info["case"]["id"]
+
+        enriched = get_assets_with_case_counts()
+        self.assertEqual(len(enriched), 6)
+        linux_srv = next(a for a in enriched if a["id"] == "ASSET-0003")
+        self.assertEqual(linux_srv["name"], "Victim Linux Web Server")
+        self.assertEqual(linux_srv["case_count"], 2)
+        self.assertEqual(linux_srv["open_case_count"], 2)
+        self.assertEqual(set(linux_srv["case_ids"]), {net_id, ep_id})
+
+        # Đảm bảo pfSense không bị đếm nhầm Case nội bộ LAN .214.10
+        pfsense_asset = next(a for a in enriched if a["id"] == "ASSET-0001")
+        self.assertEqual(pfsense_asset["case_count"], 0)
+
+        # Kiểm tra Agent Memory bổ sung ngữ cảnh Asset Memory
+        mem = get_agent_memory_context(src_ip="unknown", agent_id="002", case_id=ep_id)
+        self.assertIn("[Asset Memory]", mem)
+        self.assertIn("Victim Linux Web Server", mem)
+        self.assertIn("Web App Team", mem)
+
+        # Kiểm tra cập nhật và lưu bền vững qua soc_state.json
+        ok_upd, updated_asset, _ = upsert_asset({
+            "id": new_asset["id"],
+            "name": "Internal GitLab Runner",
+            "ip": "192.168.214.25",
+            "agent_id": "004",
+            "labels": ["linux", "server"],
+            "owner": "Platform Team",
+        })
+        self.assertTrue(ok_upd)
+        self.assertEqual(updated_asset["name"], "Internal GitLab Runner")
+        self.assertEqual(updated_asset["owner"], "Platform Team")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_state_file = os.path.join(tmpdir, "soc_state.json")
+            with patch.dict(os.environ, {"SOC_DISABLE_STATE_PERSISTENCE": "0"}):
+                self.assertTrue(save_persistent_state(state_file=temp_state_file))
+                STATE["assets"] = []
+                STATE["dismissed_asset_agents"] = []
+                self.assertTrue(load_persistent_state(state_file=temp_state_file))
+                self.assertEqual(len(STATE["assets"]), 6)
+                self.assertTrue(any(a["name"] == "Internal GitLab Runner" for a in STATE["assets"]))
+
+        # Kiểm tra xóa thiết bị
+        ok_del, del_msg = delete_asset(new_asset["id"])
+        self.assertTrue(ok_del, del_msg)
+        self.assertEqual(len(get_assets_with_case_counts()), 5)
 
 
 if __name__ == "__main__":

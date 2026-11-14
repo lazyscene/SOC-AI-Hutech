@@ -11,6 +11,12 @@ from core.case_manager import (
     close_expired_cases,
     get_case_by_id,
     update_case_status,
+    build_and_save_case_graph,
+)
+from core.asset_manager import (
+    get_assets_with_case_counts,
+    upsert_asset,
+    delete_asset,
 )
 
 router = APIRouter()
@@ -24,6 +30,7 @@ def get_state():
         "agent_ip_registry": STATE.get("agent_ip_registry", {}),
         "cases": STATE.get("cases", []),
         "parent_incidents": STATE.get("parent_incidents", []),
+        "assets": get_assets_with_case_counts(),
         "reasoning_stream": list(STATE["reasoning_stream"]),
         "decisions": list(STATE["decisions"])
     }
@@ -61,6 +68,45 @@ def replay_case(case_id: str):
         return {"success": False, "message": f"Case {case_id} chưa có alert gốc để replay."}
     threading.Thread(target=replay_case_alerts, args=(case_id,), daemon=True).start()
     return {"success": True, "message": f"Đã kích hoạt Replay phân tích lại {case_id} từ {len(case_obj['incident_alerts'])} alerts gốc."}
+
+@router.get("/api/cases/{case_id}/graph")
+def get_case_graph(case_id: str):
+    case_obj = get_case_by_id(case_id)
+    if not case_obj:
+        return {"success": False, "graph": None, "message": f"Không tìm thấy Case {case_id}."}
+    graph = case_obj.get("attack_graph")
+    if not graph:
+        return {"success": True, "graph": None, "message": "Case chưa có sơ đồ được vẽ."}
+    return {"success": True, "graph": graph, "message": "Đã tải sơ đồ đã lưu."}
+
+@router.post("/api/cases/{case_id}/graph")
+def generate_case_graph(case_id: str):
+    ok, graph_data, msg = build_and_save_case_graph(case_id)
+    return {"success": ok, "graph": graph_data, "message": msg}
+
+@router.get("/api/assets")
+def list_assets():
+    close_expired_cases()
+    return {"assets": get_assets_with_case_counts()}
+
+@router.post("/api/assets")
+def save_asset(payload: dict):
+    ok, asset, msg = upsert_asset(payload)
+    return {
+        "success": ok,
+        "asset": asset,
+        "message": msg,
+        "assets": get_assets_with_case_counts(),
+    }
+
+@router.delete("/api/assets/{asset_id}")
+def remove_asset(asset_id: str):
+    ok, msg = delete_asset(asset_id)
+    return {
+        "success": ok,
+        "message": msg,
+        "assets": get_assets_with_case_counts(),
+    }
 
 @router.post("/api/simulate")
 def simulate_attack():

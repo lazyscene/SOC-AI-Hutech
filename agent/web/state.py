@@ -25,6 +25,8 @@ STATE = {
     "agent_ip_registry": {},
     "cases": [],
     "parent_incidents": [],
+    "assets": [],
+    "dismissed_asset_agents": [],
     "reasoning_stream": deque(maxlen=50),
     "decisions": deque(maxlen=30)
 }
@@ -56,6 +58,8 @@ def save_persistent_state(state_file: Optional[str] = None) -> bool:
                 "agent_ip_registry": dict(STATE.get("agent_ip_registry", {})),
                 "cases": list(STATE.get("cases", [])),
                 "parent_incidents": list(STATE.get("parent_incidents", [])),
+                "assets": list(STATE.get("assets", [])),
+                "dismissed_asset_agents": list(STATE.get("dismissed_asset_agents", [])),
                 "decisions": list(STATE.get("decisions", [])),
                 "reasoning_stream": list(STATE.get("reasoning_stream", [])),
                 "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -120,6 +124,12 @@ def load_persistent_state(state_file: Optional[str] = None) -> bool:
             if isinstance(data.get("parent_incidents"), list):
                 STATE["parent_incidents"] = list(data["parent_incidents"][:50])
 
+            if isinstance(data.get("assets"), list):
+                STATE["assets"] = [dict(a) for a in data["assets"] if isinstance(a, dict)]
+
+            if isinstance(data.get("dismissed_asset_agents"), list):
+                STATE["dismissed_asset_agents"] = [str(x) for x in data["dismissed_asset_agents"] if str(x).strip()]
+
             if isinstance(data.get("decisions"), list):
                 STATE["decisions"] = deque(data["decisions"][:30], maxlen=30)
 
@@ -137,6 +147,7 @@ def get_agent_memory_context(
     file_path: Optional[str] = None,
     primary_hash: Optional[str] = None,
     case_id: Optional[str] = None,
+    victim_ip: Optional[str] = None,
 ) -> str:
     """
     Tổng hợp Trí nhớ bền vững (pfSense, Wazuh AR, Case Management, Lịch sử sự cố) để tiêm vào ngữ cảnh AI Agent.
@@ -221,6 +232,52 @@ def get_agent_memory_context(
         notes.append(
             f"- [Incident History Memory] Hệ thống đã từng xử lý {len(matched_decisions)} sự cố liên quan gần đây: "
             + " ; ".join(matched_decisions)
+        )
+
+    # 5. Trí nhớ Tài sản Thiết bị (Asset Manager)
+    target_ips = set()
+    if active_case:
+        for vip in active_case.get("victim_ips", []) or []:
+            vip_s = str(vip or "").strip()
+            if vip_s and vip_s.lower() not in ["unknown", "none", "n/a", ""]:
+                target_ips.add(vip_s)
+    clean_victim = str(victim_ip or "").strip()
+    if clean_victim and clean_victim.lower() not in ["unknown", "none", "n/a", ""]:
+        target_ips.add(clean_victim)
+
+    matched_assets = []
+    for asset in list(STATE.get("assets", [])):
+        if not isinstance(asset, dict):
+            continue
+        asset_agent = str(asset.get("agent_id") or "").strip()
+        asset_ips = set()
+        main_ip = str(asset.get("ip") or "").strip()
+        if main_ip:
+            asset_ips.add(main_ip)
+        for ex_ip in asset.get("extra_ips", []) or []:
+            ex_s = str(ex_ip or "").strip()
+            if ex_s:
+                asset_ips.add(ex_s)
+
+        agent_matched = (
+            clean_agent not in ["", "000", "unknown", "none"]
+            and asset_agent == clean_agent
+        )
+        ip_matched = bool(target_ips & asset_ips) or (has_valid_src and clean_src in asset_ips)
+        if agent_matched or ip_matched:
+            labels_str = ", ".join(str(lbl) for lbl in (asset.get("labels") or []) if str(lbl).strip()) or "N/A"
+            owner_str = asset.get("owner") or "N/A"
+            matched_assets.append(
+                f"{asset.get('name', asset.get('id', 'Unknown'))} "
+                f"(IP: {main_ip or 'N/A'}, Nhãn: [{labels_str}], Chủ sở hữu: {owner_str})"
+            )
+            if len(matched_assets) >= 2:
+                break
+
+    if matched_assets:
+        notes.append(
+            "- [Asset Memory] Thiết bị trong danh mục tài sản hệ thống liên quan: "
+            + " ; ".join(matched_assets)
         )
 
     if not notes:

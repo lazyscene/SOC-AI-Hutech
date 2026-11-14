@@ -22,10 +22,14 @@
                 </div>
                 <p class="text-sm text-slate-400 mt-1">pfSense Firewall REST API v2 + Wazuh SIEM + Threat Intel (VirusTotal, AbuseIPDB, MISP IOC) + Qwen LLM Core</p>
             </div>
-            <div class="flex items-center space-x-3">
+            <div class="flex flex-wrap items-center gap-2 justify-end">
                 <button id="btn-toggle-cases" onclick="toggleCasePanel()" class="bg-cyan-900/60 hover:bg-cyan-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-cyan-700 text-cyan-200 shadow flex items-center space-x-1.5">
                     <span>🗂️ Alerts & Case Management</span>
                     <span id="btn-case-count" class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 font-mono text-[10px] border border-cyan-700">0</span>
+                </button>
+                <button id="btn-toggle-assets" onclick="toggleAssetPanel()" class="bg-emerald-900/60 hover:bg-emerald-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-emerald-700 text-emerald-200 shadow flex items-center space-x-1.5">
+                    <span>🖥️ Asset Manager</span>
+                    <span id="btn-asset-count" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono text-[10px] border border-emerald-700">0</span>
                 </button>
                 <button id="btn-toggle-misp" onclick="toggleMispPanel()" class="bg-purple-900/60 hover:bg-purple-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-purple-700 text-purple-200 shadow flex items-center space-x-1">
                     <span>📑 Quản Lý MISP IOC</span>
@@ -175,12 +179,12 @@
                     <span id="case-summary-count" class="text-xs font-mono text-slate-400">(0 Cases | 0 Incidents Cha)</span>
                 </div>
                 <div class="flex items-center space-x-2 text-xs">
-                    <select id="case-filter-domain" onchange="renderCasesFromCache()" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                    <select id="case-filter-domain" onchange="renderCasesFromCache(true)" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
                         <option value="">Tất cả Miền (ALL)</option>
                         <option value="NETWORK">Miền Mạng (NETWORK)</option>
                         <option value="ENDPOINT">Miền Máy Trạm (ENDPOINT)</option>
                     </select>
-                    <select id="case-filter-status" onchange="renderCasesFromCache()" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                    <select id="case-filter-status" onchange="renderCasesFromCache(true)" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
                         <option value="">Tất cả Trạng thái</option>
                         <option value="OPEN">Đang mở (OPEN)</option>
                         <option value="CLOSED">Đã đóng (CLOSED)</option>
@@ -197,6 +201,81 @@
 
             <!-- Danh sách Cases -->
             <div id="cases-list" class="space-y-2.5 max-h-[480px] overflow-y-auto pr-1 text-xs"></div>
+        </div>
+
+        <!-- Asset Manager Panel (Collapsible) -->
+        <div id="asset-panel" class="hidden bg-slate-900 border border-emerald-800/60 rounded-xl p-4 space-y-4">
+            <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-2 gap-2">
+                <div class="flex items-center space-x-2">
+                    <span class="text-emerald-400 font-bold text-sm">🖥️ QUẢN LÝ TÀI SẢN THIẾT BỊ VẬT LÝ & MÁY CHỦ (ASSET MANAGER)</span>
+                    <span id="asset-summary-count" class="text-xs font-mono text-slate-400">(0 Thiết bị)</span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <input id="asset-search" oninput="renderAssetsFromCache(true)" type="text" placeholder="🔍 Tìm tên, IP, nhãn, chủ sở hữu..." class="bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-slate-200 font-mono placeholder:text-slate-500 w-56 focus:outline-none focus:border-emerald-500">
+                    <select id="asset-filter-label" onchange="renderAssetsFromCache(true)" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
+                        <option value="">Tất cả nhãn (ALL)</option>
+                        <option value="linux">linux</option>
+                        <option value="windows">windows</option>
+                        <option value="server">server</option>
+                        <option value="máy trạm">máy trạm</option>
+                        <option value="firewall">firewall</option>
+                        <option value="router">router</option>
+                        <option value="siem">siem</option>
+                        <option value="endpoint">endpoint</option>
+                    </select>
+                    <button onclick="toggleAssetPanel()" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Đóng</button>
+                </div>
+            </div>
+
+            <!-- Form thêm / sửa thiết bị -->
+            <form id="form-add-asset" onsubmit="saveAssetForm(event)" class="grid grid-cols-12 gap-2 text-xs bg-slate-950 p-3 rounded-lg border border-slate-800">
+                <input type="hidden" id="asset-edit-id" value="">
+                <div class="col-span-3">
+                    <label class="block text-slate-400 mb-1">Tên thiết bị *</label>
+                    <input id="asset-name" required type="text" placeholder="VD: Web App Server 01..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-slate-400 mb-1">Địa chỉ IP chính</label>
+                    <input id="asset-ip" type="text" placeholder="192.168.214.10" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white font-mono">
+                </div>
+                <div class="col-span-1">
+                    <label class="block text-slate-400 mb-1">Agent ID</label>
+                    <input id="asset-agent-id" type="text" placeholder="002" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white font-mono">
+                </div>
+                <div class="col-span-3">
+                    <label class="block text-slate-400 mb-1">Loại theo nhãn (cách nhau dấu phẩy)</label>
+                    <input id="asset-labels" type="text" placeholder="linux, server, máy trạm, firewall..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-slate-400 mb-1">Chủ sở hữu</label>
+                    <input id="asset-owner" type="text" placeholder="SOC Admin / IT Ops..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
+                </div>
+                <div class="col-span-1 flex items-end gap-1">
+                    <button id="btn-asset-submit" type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded transition">
+                        + Lưu
+                    </button>
+                    <button id="btn-asset-cancel-edit" type="button" onclick="resetAssetForm()" class="hidden px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition" title="Hủy sửa">
+                        ✕
+                    </button>
+                </div>
+            </form>
+
+            <!-- Bảng danh sách thiết bị -->
+            <div class="max-h-72 overflow-y-auto border border-slate-800 rounded-lg">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+                        <tr>
+                            <th class="p-2.5">Mã & Tên Thiết Bị</th>
+                            <th class="p-2.5">IP / Wazuh Agent</th>
+                            <th class="p-2.5">Loại Theo Nhãn</th>
+                            <th class="p-2.5">Chủ Sở Hữu</th>
+                            <th class="p-2.5">Số Case Trên Thiết Bị</th>
+                            <th class="p-2.5 text-right">Thao Tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="asset-table-body" class="divide-y divide-slate-800"></tbody>
+                </table>
+            </div>
         </div>
 
         <!-- 2 Khung chính: Stream CLI & Bảng Phán Quyết -->
@@ -238,12 +317,14 @@
 
         let cachedCasesData = { cases: [], parent_incidents: [] };
         const expandedCaseIds = new Set();
+        const openGraphCaseIds = new Set();
+        let lastCasesRenderSignature = '';
 
         function toggleCasePanel() {
             const panel = document.getElementById('case-panel');
             panel.classList.toggle('hidden');
             if (!panel.classList.contains('hidden')) {
-                renderCasesFromCache();
+                renderCasesFromCache(true);
             }
         }
 
@@ -253,7 +334,141 @@
             } else {
                 expandedCaseIds.add(caseId);
             }
-            renderCasesFromCache();
+            renderCasesFromCache(true);
+        }
+
+        function toggleSavedGraph(caseId) {
+            if (openGraphCaseIds.has(caseId)) {
+                openGraphCaseIds.delete(caseId);
+            } else {
+                openGraphCaseIds.add(caseId);
+            }
+            renderCasesFromCache(true);
+        }
+
+        async function generateCaseGraph(caseId) {
+            try {
+                const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/graph`, { method: 'POST' });
+                const data = await res.json();
+                if (!data.success || !data.graph) {
+                    alert('❌ ' + (data.message || 'Không thể dựng sơ đồ tấn công'));
+                    return;
+                }
+                const target = (cachedCasesData.cases || []).find(item => item.id === caseId);
+                if (target) {
+                    target.attack_graph = data.graph;
+                }
+                openGraphCaseIds.add(caseId);
+                renderCasesFromCache(true);
+            } catch (e) {
+                alert('❌ Lỗi kết nối khi dựng Sơ đồ: ' + e);
+            }
+        }
+
+        function renderAttackGraphSvg(graph) {
+            const nodes = graph.nodes || [];
+            const edges = graph.edges || [];
+            if (nodes.length === 0) {
+                return '<div class="text-xs text-slate-500 p-3">Chưa đủ thực thể để dựng sơ đồ.</div>';
+            }
+
+            const presentCols = [...new Set(nodes.map(n => Number(n.col || 0)))].sort((a, b) => a - b);
+            const colToIdx = {};
+            presentCols.forEach((col, i) => { colToIdx[col] = i; });
+
+            const nodesByCol = {};
+            presentCols.forEach(col => { nodesByCol[col] = []; });
+            nodes.forEach(n => { nodesByCol[Number(n.col || 0)].push(n); });
+
+            const maxRows = Math.max(1, ...presentCols.map(c => nodesByCol[c].length));
+            const nodeW = 176;
+            const nodeH = 54;
+            const colGap = 68;
+            const rowGap = 24;
+            const padX = 18;
+            const padY = 24;
+
+            const svgW = Math.max(760, padX * 2 + presentCols.length * nodeW + Math.max(0, presentCols.length - 1) * colGap);
+            const svgH = Math.max(200, padY * 2 + maxRows * nodeH + Math.max(0, maxRows - 1) * rowGap);
+
+            const pos = {};
+            presentCols.forEach(col => {
+                const colNodes = nodesByCol[col];
+                const colIdx = colToIdx[col];
+                const x = padX + colIdx * (nodeW + colGap);
+                const totalColH = colNodes.length * nodeH + Math.max(0, colNodes.length - 1) * rowGap;
+                const startY = (svgH - totalColH) / 2;
+                colNodes.forEach((n, rIdx) => {
+                    const y = startY + rIdx * (nodeH + rowGap);
+                    pos[n.id] = { x, y, cx: x + nodeW / 2, cy: y + nodeH / 2 };
+                });
+            });
+
+            const styleByType = {
+                attacker: { stroke: '#f43f5e', fill: '#4c0519', tag: '#fda4af', badge: 'ATTACKER' },
+                trigger: { stroke: '#a855f7', fill: '#3b0764', tag: '#d8b4fe', badge: 'TRIGGER' },
+                vector: { stroke: '#8b5cf6', fill: '#2e1065', tag: '#c4b5fd', badge: 'TECHNIQUE' },
+                target: { stroke: '#f59e0b', fill: '#451a03', tag: '#fcd34d', badge: 'TARGET' },
+                related_case: { stroke: '#ec4899', fill: '#500724', tag: '#f9a8d4', badge: 'LINKED' },
+                artifact_file: { stroke: '#06b6d4', fill: '#083344', tag: '#67e8f9', badge: 'FILE' },
+                artifact_hash: { stroke: '#0ea5e9', fill: '#0c4a6e', tag: '#7dd3fc', badge: 'HASH / TI' },
+                artifact_proc: { stroke: '#22d3ee', fill: '#164e63', tag: '#a5f3fc', badge: 'PROCESS' },
+                soar_action: { stroke: '#10b981', fill: '#022c22', tag: '#6ee7b7', badge: 'SOAR DEFENSE' },
+            };
+
+            const markerId = `arrow-${escapeHtml(graph.case_id || 'case')}`.replace(/[^a-zA-Z0-9_-]/g, '');
+
+            const edgesSvg = edges.map(e => {
+                const s = pos[e.source];
+                const t = pos[e.target];
+                if (!s || !t) return '';
+                const x1 = s.x + nodeW;
+                const y1 = s.cy;
+                const x2 = t.x;
+                const y2 = t.cy;
+                const dx = Math.max(30, Math.abs(x2 - x1) * 0.45);
+                const d = (x2 >= x1)
+                    ? `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2 - 4} ${y2}`
+                    : `M ${s.cx} ${s.y} Q ${(s.cx + t.cx) / 2} ${Math.min(s.y, t.y) - 36}, ${t.cx} ${t.y}`;
+                const mx = (x1 + x2) / 2;
+                const my = (y1 + y2) / 2 - 6;
+                const lbl = escapeHtml(e.label || '');
+                const lblSvg = lbl ? `
+                    <rect x="${mx - Math.min(54, lbl.length * 3.2 + 6)}" y="${my - 9}" width="${Math.min(108, lbl.length * 6.4 + 12)}" height="14" rx="4" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+                    <text x="${mx}" y="${my + 1}" text-anchor="middle" fill="#cbd5e1" font-size="9" font-family="monospace">${lbl}</text>
+                ` : '';
+                return `<path d="${d}" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#${markerId})" opacity="0.9"/>${lblSvg}`;
+            }).join('');
+
+            const nodesSvg = nodes.map(n => {
+                const p = pos[n.id];
+                if (!p) return '';
+                const st = styleByType[n.type] || { stroke: '#64748b', fill: '#1e293b', tag: '#cbd5e1', badge: 'ENTITY' };
+                const titleTxt = (n.label || '').length > 23 ? (n.label.slice(0, 22) + '…') : (n.label || '');
+                const subTxt = (n.sublabel || '').length > 26 ? (n.sublabel.slice(0, 25) + '…') : (n.sublabel || '');
+                return `
+                    <g transform="translate(${p.x}, ${p.y})">
+                        <rect width="${nodeW}" height="${nodeH}" rx="8" fill="${st.fill}" stroke="${st.stroke}" stroke-width="1.5"/>
+                        <text x="10" y="15" fill="${st.tag}" font-size="8.5" font-weight="bold" font-family="monospace">${escapeHtml(st.badge)}</text>
+                        <text x="10" y="31" fill="#f8fafc" font-size="11" font-weight="bold" font-family="sans-serif">${escapeHtml(titleTxt)}</text>
+                        <text x="10" y="45" fill="#94a3b8" font-size="9.5" font-family="monospace">${escapeHtml(subTxt)}</text>
+                    </g>
+                `;
+            }).join('');
+
+            return `
+                <div class="overflow-x-auto bg-black/70 border border-slate-800 rounded-lg p-2">
+                    <svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" class="mx-auto block">
+                        <defs>
+                            <marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                                <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
+                            </marker>
+                        </defs>
+                        ${edgesSvg}
+                        ${nodesSvg}
+                    </svg>
+                </div>
+            `;
         }
 
         async function changeCaseStatus(caseId, newStatus) {
@@ -286,11 +501,24 @@
             }
         }
 
-        function renderCasesFromCache() {
+        function renderCasesFromCache(force = false) {
             const cases = cachedCasesData.cases || [];
             const parentIncidents = cachedCasesData.parent_incidents || [];
             const domainFilter = (document.getElementById('case-filter-domain')?.value || '').toUpperCase();
             const statusFilter = (document.getElementById('case-filter-status')?.value || '').toUpperCase();
+
+            const signature = JSON.stringify({
+                df: domainFilter,
+                sf: statusFilter,
+                exp: [...expandedCaseIds].sort(),
+                grp: [...openGraphCaseIds].sort(),
+                pis: parentIncidents.map(p => `${p.id}:${p.updated_at}:${p.severity}:${(p.combined_timeline || []).length}`),
+                cs: cases.map(c => `${c.id}:${c.status}:${c.verdict}:${c.severity}:${c.alert_count}:${c.slm_calls}:${c.updated_at}:${(c.related_case_ids || []).join(',')}:${c.attack_graph ? c.attack_graph.generated_at : ''}`)
+            });
+            if (!force && signature === lastCasesRenderSignature) {
+                return;
+            }
+            lastCasesRenderSignature = signature;
 
             document.getElementById('case-summary-count').innerText = `(${cases.length} Cases | ${parentIncidents.length} Parent Incidents)`;
 
@@ -370,6 +598,31 @@
                     ? `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'OPEN')" class="px-2 py-1 rounded bg-emerald-900/70 hover:bg-emerald-800 text-emerald-200 border border-emerald-700 text-[11px]">🔓 Mở lại</button>`
                     : `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'CLOSED')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-[11px]">🔒 Đóng Case</button>`;
 
+                const hasGraph = Boolean(c.attack_graph);
+                const isGraphOpen = hasGraph && openGraphCaseIds.has(c.id);
+                const isGraphStale = hasGraph && (c.alert_count > (c.attack_graph.generated_at_alert_count || 0));
+                const graphBtnHtml = !hasGraph
+                    ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-indigo-900/70 hover:bg-indigo-800 text-indigo-200 border border-indigo-700 text-[11px]">🕸️ Vẽ Sơ Đồ</button>`
+                    : `<button onclick="toggleSavedGraph('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-indigo-900/70 hover:bg-indigo-800 text-indigo-200 border border-indigo-700 text-[11px]">${isGraphOpen ? '🕸️ Ẩn Sơ Đồ' : '🕸️ Xem Sơ Đồ Đã Lưu'}</button>` +
+                      ((isGraphOpen || isGraphStale) ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" title="Cập nhật lại sơ đồ theo dữ liệu mới nhất" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-700/70 text-[11px]">${isGraphStale ? '🔄 Cập Nhật Sơ Đồ' : '🔄 Vẽ Lại'}</button>` : '');
+
+                let graphContainerHtml = '';
+                if (isGraphOpen) {
+                    const g = c.attack_graph;
+                    graphContainerHtml = `
+                        <div class="mt-2 pt-2 border-t border-indigo-800/50 space-y-2 bg-slate-950/80 p-2.5 rounded-lg">
+                            <div class="flex flex-wrap justify-between items-center gap-2 text-[11px]">
+                                <span class="font-bold text-indigo-300">🕸️ SƠ ĐỒ MỐI LIÊN HỆ TRỰC QUAN (${escapeHtml(c.id)}) — Đã lưu lúc ${escapeHtml(g.generated_at)} (${g.generated_at_alert_count} alerts)</span>
+                                <span class="text-slate-400 font-mono">🔴 Attacker | 🟣 Kỹ thuật | 🟡 Mục tiêu | 🔵 File/Hash/Proc | 🟢 SOAR Defense</span>
+                            </div>
+                            ${renderAttackGraphSvg(g)}
+                            <div class="text-[11px] font-mono text-indigo-200 bg-indigo-950/40 border border-indigo-800/60 px-2.5 py-1.5 rounded">
+                                <b>Đường đi tấn công:</b> ${escapeHtml(g.attack_path_summary || '')}
+                            </div>
+                        </div>
+                    `;
+                }
+
                 let detailsHtml = '';
                 if (isExpanded) {
                     const alertsRows = (c.incident_alerts || []).slice().reverse().map((a, idx) =>
@@ -391,7 +644,7 @@
                 }
 
                 return `
-                    <div class="p-3 bg-slate-950/70 border border-slate-800 rounded-lg space-y-1.5">
+                    <div id="case-card-${escapeHtml(c.id)}" class="p-3 bg-slate-950/70 border border-slate-800 rounded-lg space-y-1.5">
                         <div class="flex flex-wrap justify-between items-center gap-2">
                             <div class="flex flex-wrap items-center gap-1.5">
                                 <span class="font-mono font-bold text-white">${escapeHtml(c.id)}</span>
@@ -404,6 +657,7 @@
                             <div class="flex items-center gap-1.5">
                                 <span class="text-[11px] font-mono text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">Alerts: <b>${c.alert_count}</b> | SLM: <b>${c.slm_calls}</b></span>
                                 <button onclick="toggleCaseDetails('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-cyan-900/60 hover:bg-cyan-800 text-cyan-200 border border-cyan-700 text-[11px]">${isExpanded ? '▲ Thu gọn' : '▼ Chi tiết'}</button>
+                                ${graphBtnHtml}
                                 <button onclick="replayCase('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700 text-[11px]">🔄 Replay</button>
                                 ${toggleActionStatus}
                             </div>
@@ -413,6 +667,7 @@
                             ${targetDisplay} | Tạo lúc: ${escapeHtml(c.created_at)} | Cập nhật: ${escapeHtml(c.updated_at)}
                             ${c.close_reason ? ` | Đóng: <span class="text-slate-300">${escapeHtml(c.close_reason)}</span>` : ''}
                         </div>
+                        ${graphContainerHtml}
                         ${detailsHtml}
                     </div>
                 `;
@@ -527,6 +782,254 @@
             }
         }
 
+        let cachedAssetsData = [];
+        let lastAssetsRenderSignature = '';
+
+        function toggleAssetPanel() {
+            const panel = document.getElementById('asset-panel');
+            panel.classList.toggle('hidden');
+            if (!panel.classList.contains('hidden')) {
+                renderAssetsFromCache(true);
+            }
+        }
+
+        function getAssetLabelBadgeClass(label) {
+            const lbl = (label || '').toLowerCase().trim();
+            if (lbl === 'firewall' || lbl === 'router' || lbl === 'network') {
+                return 'bg-amber-950 text-amber-300 border-amber-700';
+            }
+            if (lbl === 'linux') {
+                return 'bg-cyan-950 text-cyan-300 border-cyan-700';
+            }
+            if (lbl === 'windows') {
+                return 'bg-sky-950 text-sky-300 border-sky-700';
+            }
+            if (lbl === 'máy trạm' || lbl === 'endpoint') {
+                return 'bg-purple-950 text-purple-300 border-purple-700';
+            }
+            if (lbl === 'server' || lbl === 'siem' || lbl === 'soc' || lbl === 'web' || lbl === 'gpu-host' || lbl === 'ai-core') {
+                return 'bg-indigo-950 text-indigo-300 border-indigo-700';
+            }
+            return 'bg-slate-800 text-slate-300 border-slate-700';
+        }
+
+        function syncAssetFilterOptions(assets) {
+            const selectEl = document.getElementById('asset-filter-label');
+            if (!selectEl) return;
+            const currentVal = selectEl.value;
+            const knownOptions = new Set(Array.from(selectEl.options).map(o => o.value));
+            assets.forEach(a => {
+                (a.labels || []).forEach(lbl => {
+                    const clean = (lbl || '').trim().toLowerCase();
+                    if (clean && !knownOptions.has(clean)) {
+                        knownOptions.add(clean);
+                        const opt = document.createElement('option');
+                        opt.value = clean;
+                        opt.textContent = clean;
+                        selectEl.appendChild(opt);
+                    }
+                });
+            });
+            selectEl.value = currentVal;
+        }
+
+        function renderAssetsFromCache(force = false) {
+            const assets = cachedAssetsData || [];
+            syncAssetFilterOptions(assets);
+
+            const searchEl = document.getElementById('asset-search');
+            const labelEl = document.getElementById('asset-filter-label');
+            const searchQuery = searchEl ? searchEl.value.trim().toLowerCase() : '';
+            const labelFilter = labelEl ? labelEl.value.trim().toLowerCase() : '';
+
+            const signature = JSON.stringify(assets) + '|' + searchQuery + '|' + labelFilter;
+            if (!force && signature === lastAssetsRenderSignature) {
+                return;
+            }
+            lastAssetsRenderSignature = signature;
+
+            const totalCasesLinked = assets.reduce((acc, a) => acc + (a.case_count || 0), 0);
+            const summaryEl = document.getElementById('asset-summary-count');
+            if (summaryEl) {
+                summaryEl.innerText = `(${assets.length} Thiết bị | ${totalCasesLinked} lượt Case ghi nhận)`;
+            }
+
+            const filtered = assets.filter(a => {
+                if (labelFilter && !(a.labels || []).some(l => (l || '').toLowerCase() === labelFilter)) {
+                    return false;
+                }
+                if (searchQuery) {
+                    const hay = [
+                        a.id,
+                        a.name,
+                        a.ip,
+                        ...(a.extra_ips || []),
+                        a.agent_id,
+                        ...(a.labels || []),
+                        a.owner,
+                        ...(a.case_ids || [])
+                    ].join(' ').toLowerCase();
+                    if (!hay.includes(searchQuery)) return false;
+                }
+                return true;
+            });
+
+            const tbody = document.getElementById('asset-table-body');
+            if (!tbody) return;
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Không tìm thấy thiết bị nào khớp bộ lọc.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(a => {
+                const labelsHtml = (a.labels && a.labels.length > 0)
+                    ? a.labels.map(lbl => `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-mono border ${getAssetLabelBadgeClass(lbl)}">${escapeHtml(lbl)}</span>`).join(' ')
+                    : '<span class="text-slate-500 text-[11px]">Chưa gắn nhãn</span>';
+
+                const ipsList = (a.all_ips && a.all_ips.length > 0) ? a.all_ips.join(', ') : (a.ip || 'N/A');
+                const agentText = a.agent_id ? `<div class="text-[10px] text-purple-300 font-mono mt-0.5">Wazuh Agent: #${escapeHtml(a.agent_id)}</div>` : '';
+                const containmentBadge = a.containment_status
+                    ? `<div class="mt-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-950/70 text-amber-300 border border-amber-700/70">🛡️ ${escapeHtml(a.containment_status)}</div>`
+                    : '';
+
+                const caseCount = Number(a.case_count || 0);
+                const openCount = Number(a.open_case_count || 0);
+                const caseCountColor = caseCount === 0
+                    ? 'bg-slate-800 text-slate-400 border-slate-700'
+                    : (openCount > 0 ? 'bg-rose-950 text-rose-300 border-rose-700 font-bold' : 'bg-cyan-950 text-cyan-300 border-cyan-700 font-bold');
+
+                const caseLinksHtml = (a.case_ids && a.case_ids.length > 0)
+                    ? '<div class="flex flex-wrap gap-1 mt-1">' + a.case_ids.slice(0, 4).map(cid =>
+                        `<button onclick="openCaseFromAsset('${escapeHtml(cid)}')" class="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-cyan-950 text-cyan-300 border border-slate-700 hover:border-cyan-700 font-mono text-[10px] transition">${escapeHtml(cid)}</button>`
+                      ).join('') + (a.case_ids.length > 4 ? `<span class="text-[10px] text-slate-400">+${a.case_ids.length - 4}</span>` : '') + '</div>'
+                    : '';
+
+                return `
+                    <tr class="hover:bg-slate-800/40 align-top">
+                        <td class="p-2.5">
+                            <div class="font-bold text-white">${escapeHtml(a.name)}</div>
+                            <div class="text-[10px] font-mono text-emerald-400">${escapeHtml(a.id)}</div>
+                            ${containmentBadge}
+                        </td>
+                        <td class="p-2.5 font-mono text-slate-200">
+                            <div>${escapeHtml(ipsList)}</div>
+                            ${agentText}
+                        </td>
+                        <td class="p-2.5">
+                            <div class="flex flex-wrap gap-1">${labelsHtml}</div>
+                        </td>
+                        <td class="p-2.5 text-slate-200 font-medium">${escapeHtml(a.owner || 'Unassigned')}</td>
+                        <td class="p-2.5">
+                            <div class="flex items-center gap-1.5">
+                                <span class="px-2 py-0.5 rounded text-[11px] font-mono border ${caseCountColor}">${caseCount} Case</span>
+                                ${openCount > 0 ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-950/70 text-amber-300 border border-amber-700/70">${openCount} đang mở</span>` : ''}
+                            </div>
+                            ${caseLinksHtml}
+                        </td>
+                        <td class="p-2.5 text-right whitespace-nowrap space-x-1">
+                            <button onclick="editAssetItem('${escapeHtml(a.id)}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px]">✏️ Sửa</button>
+                            <button onclick="deleteAssetItem('${escapeHtml(a.id)}', '${escapeHtml(a.name)}')" class="px-2 py-1 rounded bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800 text-[11px]">🗑️ Xóa</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function editAssetItem(assetId) {
+            const asset = (cachedAssetsData || []).find(a => a.id === assetId);
+            if (!asset) return;
+            document.getElementById('asset-edit-id').value = asset.id || '';
+            document.getElementById('asset-name').value = asset.name || '';
+            document.getElementById('asset-ip').value = asset.ip || '';
+            document.getElementById('asset-agent-id').value = asset.agent_id || '';
+            document.getElementById('asset-labels').value = (asset.labels || []).join(', ');
+            document.getElementById('asset-owner').value = asset.owner || '';
+            document.getElementById('btn-asset-submit').innerText = '💾 Cập nhật';
+            document.getElementById('btn-asset-cancel-edit').classList.remove('hidden');
+            document.getElementById('asset-name').focus();
+        }
+
+        function resetAssetForm() {
+            document.getElementById('asset-edit-id').value = '';
+            document.getElementById('asset-name').value = '';
+            document.getElementById('asset-ip').value = '';
+            document.getElementById('asset-agent-id').value = '';
+            document.getElementById('asset-labels').value = '';
+            document.getElementById('asset-owner').value = '';
+            document.getElementById('btn-asset-submit').innerText = '+ Lưu';
+            document.getElementById('btn-asset-cancel-edit').classList.add('hidden');
+        }
+
+        async function saveAssetForm(e) {
+            e.preventDefault();
+            const id = document.getElementById('asset-edit-id').value.trim();
+            const name = document.getElementById('asset-name').value.trim();
+            const ip = document.getElementById('asset-ip').value.trim();
+            const agent_id = document.getElementById('asset-agent-id').value.trim();
+            const labels = document.getElementById('asset-labels').value.trim();
+            const owner = document.getElementById('asset-owner').value.trim();
+
+            try {
+                const res = await fetch('/api/assets', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ id: id || undefined, name, ip, agent_id, labels, owner })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    cachedAssetsData = data.assets || cachedAssetsData;
+                    const badge = document.getElementById('btn-asset-count');
+                    if (badge) badge.innerText = cachedAssetsData.length;
+                    resetAssetForm();
+                    renderAssetsFromCache(true);
+                } else {
+                    alert('❌ ' + (data.message || 'Không thể lưu thiết bị.'));
+                }
+            } catch (err) {
+                alert('❌ Lỗi kết nối server: ' + err);
+            }
+        }
+
+        async function deleteAssetItem(assetId, assetName) {
+            if (!confirm(`Bạn có chắc muốn xóa thiết bị ${assetId} (${assetName}) khỏi Asset Manager?`)) return;
+            try {
+                const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    cachedAssetsData = data.assets || [];
+                    const badge = document.getElementById('btn-asset-count');
+                    if (badge) badge.innerText = cachedAssetsData.length;
+                    if (document.getElementById('asset-edit-id').value === assetId) {
+                        resetAssetForm();
+                    }
+                    renderAssetsFromCache(true);
+                } else {
+                    alert('❌ ' + (data.message || 'Không thể xóa thiết bị.'));
+                }
+            } catch (err) {
+                alert('❌ Lỗi xóa thiết bị: ' + err);
+            }
+        }
+
+        function openCaseFromAsset(caseId) {
+            const casePanel = document.getElementById('case-panel');
+            if (casePanel && casePanel.classList.contains('hidden')) {
+                casePanel.classList.remove('hidden');
+            }
+            const domainEl = document.getElementById('case-filter-domain');
+            const statusEl = document.getElementById('case-filter-status');
+            if (domainEl) domainEl.value = '';
+            if (statusEl) statusEl.value = '';
+            expandedCaseIds.add(caseId);
+            renderCasesFromCache(true);
+            setTimeout(() => {
+                const targetCard = document.getElementById(`case-card-${caseId}`);
+                if (targetCard) {
+                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 50);
+        }
+
         async function triggerSim() {
             const btn = document.getElementById('btn-sim');
             btn.disabled = true;
@@ -576,6 +1079,15 @@
                 const casePanel = document.getElementById('case-panel');
                 if (casePanel && !casePanel.classList.contains('hidden')) {
                     renderCasesFromCache();
+                }
+                cachedAssetsData = data.assets || [];
+                const assetCountBadge = document.getElementById('btn-asset-count');
+                if (assetCountBadge) {
+                    assetCountBadge.innerText = cachedAssetsData.length;
+                }
+                const assetPanel = document.getElementById('asset-panel');
+                if (assetPanel && !assetPanel.classList.contains('hidden')) {
+                    renderAssetsFromCache();
                 }
                 const blockedIps = (data.stats.blocked_ips && data.stats.blocked_ips.length > 0) ? data.stats.blocked_ips : [];
                 const epActions = (data.stats.endpoint_actions && data.stats.endpoint_actions.length > 0) ? data.stats.endpoint_actions : [];

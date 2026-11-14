@@ -343,6 +343,8 @@ def ingest_alert_into_case(alert_summary: Dict[str, Any], now_ts: Optional[float
         ep_ip_to_register = agent_ip if agent_ip.lower() not in ["unknown", "none", ""] else victim_ip
         if agent_id not in ["000", "unknown", "none", ""]:
             register_agent_ip(agent_id, ep_ip_to_register, agent_name)
+        from core.asset_manager import ensure_default_assets
+        ensure_default_assets()
 
         rule_id = str(alert_summary.get("rule_id") or "").strip()
         level = int(alert_summary.get("level", 0) or 0)
@@ -788,3 +790,198 @@ def update_case_status(case_id: str, new_status: str, reason: str = "") -> Tuple
         _recompute_case_stats()
         save_persistent_state()
         return True, case, f"Đã cập nhật trạng thái {case_id} thành {clean_status}."
+
+
+def build_and_save_case_graph(case_id: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """
+    Dựng Sơ đồ trực quan (Attack Path Graph) cho một Case theo yêu cầu (On-Demand)
+    và lưu bền vững vào case['attack_graph'] để không phải vẽ lại real-time.
+    """
+    with _CASE_LOCK:
+        case = get_case_by_id(case_id)
+        if not case:
+            return False, None, f"Không tìm thấy Case {case_id}."
+
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, str]] = []
+        node_ids = set()
+        edge_keys = set()
+
+        def add_node(nid: str, col: int, ntype: str, label: str, sublabel: str = "") -> str:
+            if nid not in node_ids:
+                node_ids.add(nid)
+                nodes.append({
+                    "id": nid,
+                    "col": col,
+                    "type": ntype,
+                    "label": str(label)[:42],
+                    "sublabel": str(sublabel)[:54],
+                })
+            return nid
+
+        def add_edge(src: str, dst: str, label: str = "") -> None:
+            key = (src, dst, label)
+            if src in node_ids and dst in node_ids and key not in edge_keys:
+                edge_keys.add(key)
+                edges.append({"source": src, "target": dst, "label": label[:26]})
+
+        domain = case.get("domain", "NETWORK")
+        src_ip = str(case.get("src_ip") or "unknown").strip()
+        agent_id = str(case.get("agent_id") or "000").strip()
+        agent_name = str(case.get("agent_name") or "").strip()
+        related_ids = list(case.get("related_case_ids", []))
+        parent_inc_id = case.get("parent_incident_id")
+        inc_alerts = list(case.get("incident_alerts", []))
+
+        # Lớp 0: Nguồn tấn công / Khởi phát
+        col0_ids: List[str] = []
+        linked_attacker_ip = None
+        if src_ip.lower() not in ["unknown", "none", "n/a", ""]:
+            linked_attacker_ip = src_ip
+            col0_ids.append(add_node(f"ip:{src_ip}", 0, "attacker", src_ip, "Attacker Source IP"))
+        else:
+            for rel_id in related_ids:
+                rel_case = get_case_by_id(rel_id)
+                if rel_case and str(rel_case.get("src_ip", "unknown")).lower() not in ["unknown", "none", ""]:
+                    rel_src = str(rel_case["src_ip"]).strip()
+                    linked_attacker_ip = rel_src
+                    col0_ids.append(add_node(f"ip:{rel_src}", 0, "attacker", rel_src, f"Attacker (Linked {rel_id})"))
+            if not col0_ids:
+                first_src = inc_alerts[0].get("src_ip") if inc_alerts else None
+                src_label = inc_alerts[0].get("source", "Wazuh FIM/EDR") if inc_alerts else "Wazuh Endpoint"
+                col0_ids.append(add_node(f"trigger:{case_id}", 0, "trigger", "Endpoint Event", str(first_src if first_src not in ["unknown", None, ""] else src_label)))
+
+        # Lớp 1: Kỹ thuật MITRE ATT&CK / Vector tấn công
+        col1_ids: List[str] = []
+        mitre_sources = list(case.get("mitre_tags") or case.get("seen_mitre_ids") or [])
+        for m_item in mitre_sources[:4]:
+            m_str = str(m_item).strip()
+            codes = _extract_mitre_codes(m_str)
+            m_code = codes[0] if codes else m_str
+            col1_ids.append(add_node(f"mitre:{m_code}", 1, "vector", m_code, m_str))
+
+        if not col1_ids:
+            seen_rules: List[str] = []
+            for a in inc_alerts:
+                rid = str(a.get("rule_id") or "?").strip()
+                if rid not in seen_rules:
+                    seen_rules.append(rid)
+                    col1_ids.append(add_node(f"rule:{rid}", 1, "vector", f"Rule {rid}", str(a.get("title") or "Security Alert")))
+                if len(seen_rules) >= 3:
+                    break
+            if not col1_ids:
+                col1_ids.append(add_node(f"rule:case:{case_id}", 1, "vector", "Alert Vector", case.get("title", "")))
+
+        edge_count_lbl = f"{case.get('alert_count', len(inc_alerts))} alerts"
+        for s_id in col0_ids:
+            for v_id in col1_ids:
+                add_edge(s_id, v_id, edge_count_lbl)
+
+        # Lớp 2: Máy đích / Endpoint bị ảnh hưởng + Related Case
+        col2_target_ids: List[str] = []
+        victims = [str(v).strip() for v in case.get("victim_ips", []) if v and str(v).lower() not in ["unknown", "none", "n/a"]]
+        for vip in victims[:4]:
+            sub = f"Agent {agent_id} ({agent_name or 'Endpoint'})" if (domain == "ENDPOINT" and agent_id not in ["000", "unknown", ""]) else "Victim Target Host"
+            col2_target_ids.append(add_node(f"host:{vip}", 2, "target", vip, sub))
+
+        if not col2_target_ids:
+            ep_lbl = f"Agent {agent_id}" if agent_id not in ["000", "unknown", ""] else "Protected Host"
+            col2_target_ids.append(add_node(f"agent:{agent_id}", 2, "target", ep_lbl, agent_name or "Victim Endpoint"))
+
+        target_edge_lbl = "Compromises" if domain == "ENDPOINT" else "Targets"
+        for v_id in col1_ids:
+            for t_id in col2_target_ids:
+                add_edge(v_id, t_id, target_edge_lbl)
+
+        for rel_id in related_ids[:3]:
+            rel_node_id = add_node(
+                f"rel:{rel_id}",
+                2,
+                "related_case",
+                f"Related {rel_id}",
+                f"Parent: {parent_inc_id}" if parent_inc_id else "Kill-Chain Link",
+            )
+            for t_id in col2_target_ids[:1]:
+                add_edge(t_id, rel_node_id, "Kill-Chain")
+
+        # Lớp 3: Artifacts (File, Hash/TI, Process)
+        col3_ids: List[str] = []
+        seen_files, seen_procs = set(), set()
+        primary_target = col2_target_ids[0]
+
+        for a in inc_alerts:
+            fp = str(a.get("file_path") or "").strip()
+            if fp and fp not in seen_files and len(seen_files) < 3:
+                seen_files.add(fp)
+                short_name = os.path.basename(fp) or fp
+                f_nid = add_node(f"file:{fp}", 3, "artifact_file", short_name, fp)
+                col3_ids.append(f_nid)
+                add_edge(primary_target, f_nid, str(a.get("event_type") or "File Impact"))
+
+            proc = str(a.get("process_name") or "").strip()
+            pid = str(a.get("process_id") or "").strip()
+            if (proc or pid) and (proc, pid) not in seen_procs and len(seen_procs) < 3:
+                seen_procs.add((proc, pid))
+                p_lbl = os.path.basename(proc) if proc else f"PID {pid}"
+                p_nid = add_node(f"proc:{proc}:{pid}", 3, "artifact_proc", f"Proc: {p_lbl}", f"PID: {pid or 'N/A'}")
+                col3_ids.append(p_nid)
+                add_edge(primary_target, p_nid, "Executes")
+
+        ti_text = str(case.get("ti_summary") or "").strip()
+        for h in list(case.get("seen_hashes", []))[:2]:
+            h_nid = add_node(f"hash:{h}", 3, "artifact_hash", f"Hash: {h[:12]}...", ti_text or "File Hash IOC")
+            col3_ids.append(h_nid)
+            add_edge(primary_target, h_nid, "IOC Check")
+
+        # Lớp 4: Hành động phòng vệ SOAR (pfSense Firewall & Wazuh AR)
+        col4_ids: List[str] = []
+        blocked_ips = STATE.get("stats", {}).get("blocked_ips", [])
+        actions_text = " ".join(str(x) for x in case.get("actions_taken", []))
+
+        check_block_ip = linked_attacker_ip or (src_ip if src_ip not in ["unknown", "none", ""] else None)
+        if check_block_ip and (check_block_ip in blocked_ips or "pfSense Block" in actions_text):
+            pf_nid = add_node(f"soar:pfsense:{check_block_ip}", 4, "soar_action", "pfSense Firewall", f"BLOCKED {check_block_ip}")
+            col4_ids.append(pf_nid)
+            anchor = col0_ids[0] if not col3_ids else col3_ids[0]
+            add_edge(primary_target if primary_target else anchor, pf_nid, "SOAR Block")
+
+        ep_rec = STATE.get("endpoint_containment", {}).get(agent_id)
+        if isinstance(ep_rec, dict) or "Wazuh" in actions_text or "Phase 1" in actions_text or "Phase 2" in actions_text:
+            iso_status = ep_rec.get("isolation_status", "CONTAINED") if isinstance(ep_rec, dict) else "CONTAINED"
+            wz_nid = add_node(f"soar:wazuh:{agent_id}", 4, "soar_action", f"Wazuh AR ({agent_id})", iso_status)
+            col4_ids.append(wz_nid)
+            source_for_wz = col3_ids[0] if col3_ids else primary_target
+            add_edge(source_for_wz, wz_nid, "Endpoint Contain")
+
+        src_desc = linked_attacker_ip or "Endpoint Event"
+        vec_desc = ", ".join(n["label"] for n in nodes if n["col"] == 1)[:60] or "Alert"
+        tgt_desc = ", ".join(n["label"] for n in nodes if n["type"] == "target")[:60] or "Host"
+        art_desc = ", ".join(n["label"] for n in nodes if n["col"] == 3)[:60]
+        soar_desc = ", ".join(f"{n['label']} ({n['sublabel']})" for n in nodes if n["col"] == 4)[:80]
+
+        path_parts = [f"Nguồn: {src_desc}", f"Kỹ thuật: {vec_desc}", f"Đích: {tgt_desc}"]
+        if art_desc:
+            path_parts.append(f"Thực thể: {art_desc}")
+        if soar_desc:
+            path_parts.append(f"Phản ứng SOAR: {soar_desc}")
+        attack_path_summary = " ➔ ".join(path_parts)
+
+        now_ts = time.time()
+        graph_data = {
+            "case_id": case_id,
+            "generated_at": _format_ts(now_ts),
+            "generated_at_alert_count": int(case.get("alert_count", 0) or 0),
+            "nodes": nodes,
+            "edges": edges,
+            "attack_path_summary": attack_path_summary,
+        }
+        case["attack_graph"] = graph_data
+        case["updated_at"] = _format_ts(now_ts)
+        save_persistent_state()
+
+        log_event(
+            "CASE",
+            f"🕸️ Đã dựng và lưu Sơ đồ tấn công (Graph Visualization) cho {case_id} "
+            f"({len(nodes)} thực thể, {len(edges)} liên kết)."
+        )
+        return True, graph_data, f"Đã tạo và lưu sơ đồ trực quan cho {case_id}."
