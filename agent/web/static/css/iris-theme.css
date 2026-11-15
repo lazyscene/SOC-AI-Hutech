@@ -1,0 +1,154 @@
+/* IRIS-inspired Design Tokens & Component Styles for MINI-SOC */
+
+:root {
+    --background: 222 33% 97%;
+    --foreground: 224 71% 6%;
+    --muted: 220 18% 93%;
+    --muted-foreground: 220 10% 45%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71% 6%;
+    --border: 220 16% 88%;
+    --input: 220 16% 86%;
+    --primary: 214 91% 24%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 220 16% 93%;
+    --secondary-foreground: 224 71% 6%;
+    --accent: 214 91% 96%;
+    --accent-foreground: 214 91% 20%;
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 220 12% 36%;
+    --sidebar-border: 220 16% 90%;
+    --sidebar-hover: 220 20% 95%;
+    --topbar-bg: 0 0% 100%;
+    --warroom-tint: linear-gradient(90deg, rgba(244, 63, 94, 0.06) 0%, rgba(245, 158, 11, 0.05) 55%, rgba(255, 255, 255, 0) 100%);
+}
+
+html.dark {
+    --background: 220 30% 6%;
+    --foreground: 216 24% 92%;
+    --muted: 223 24% 13%;
+    --muted-foreground: 218 14% 58%;
+    --card: 224 29% 10%;
+    --card-foreground: 216 24% 92%;
+    --border: 224 24% 18%;
+    --input: 224 24% 20%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 224 24% 14%;
+    --secondary-foreground: 216 24% 92%;
+    --accent: 223 30% 17%;
+    --accent-foreground: 213 94% 68%;
+    --sidebar: 223 32% 9%;
+    --sidebar-foreground: 218 15% 70%;
+    --sidebar-border: 224 24% 16%;
+    --sidebar-hover: 224 26% 14%;
+    --topbar-bg: 223 31% 11%;
+    --warroom-tint: linear-gradient(90deg, rgba(244, 63, 94, 0.12) 0%, rgba(245, 158, 11, 0.08) 55%, rgba(18, 22, 33, 0) 100%);
+}
+
+body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+.iris-panel {
+    background-color: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+html.dark .iris-panel {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.iris-subcard {
+    background-color: hsl(var(--muted) / 0.45);
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.65rem;
+}
+
+html.dark .iris-subcard {
+    background-color: rgba(11, 14, 20, 0.65);
+}
+
+.iris-input {
+    background-color: hsl(var(--card));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--input));
+    border-radius: 0.5rem;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+html.dark .iris-input {
+    background-color: #0b0e14;
+}
+
+.iris-input:focus {
+    outline: none;
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 2px hsl(var(--primary) / 0.18);
+}
+
+.iris-topbar {
+    background-color: hsl(var(--topbar-bg));
+    border-bottom: 1px solid hsl(var(--border));
+}
+
+.iris-warroom-header {
+    background: var(--warroom-tint);
+}
+
+.sidebar-collapsed {
+    width: 4.25rem !important;
+}
+
+.sidebar-collapsed .sidebar-label,
+.sidebar-collapsed .sidebar-section-title,
+.sidebar-collapsed .sidebar-profile-meta,
+.sidebar-collapsed .sidebar-badge,
+.sidebar-collapsed .sidebar-footer-text {
+    display: none !important;
+}
+
+.sidebar-collapsed .sidebar-nav-btn {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.sidebar-collapsed .sidebar-brand-wrap {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.sidebar-collapsed .sidebar-brand-text {
+    display: none;
+}
+
+.sidebar-collapsed .sidebar-profile-wrap {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.45);
+}

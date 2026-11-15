@@ -7,7 +7,12 @@ import threading
 from collections import deque
 from typing import Optional, List, Tuple, Dict
 from core.controller import run_agent_loop
-from core.case_manager import register_agent_ip
+from core.case_manager import (
+    register_agent_ip,
+    normalize_network_direction,
+    is_server_response_flow,
+    extract_ports_from_alert,
+)
 from core.models import AlertEvent, safe_get, normalize_hash
 from core.network_utils import is_valid_ip
 from web.state import log_event
@@ -52,6 +57,36 @@ def is_broadcast_or_ignored(ip_str: str) -> bool:
         pass
     return False
 
+def _is_benign_filterlog_packet(full_log: str) -> bool:
+    """Bỏ qua gói tin pfSense filterlog out-of-state TCP (ACK/RST/FIN-ACK không có SYN) hoặc telemetry Wazuh (1514/1515)."""
+    log_str = full_log or ""
+    if "filterlog" not in log_str.lower():
+        return False
+
+    m = re.search(r"filterlog(?:\[\d+\])?:\s*(.+)", log_str, re.IGNORECASE)
+    csv_part = m.group(1) if m else log_str
+    fields = [f.strip() for f in csv_part.split(",")]
+    if len(fields) < 22 or fields[8] != "4":
+        return False
+
+    proto = fields[16].lower()
+    dst_raw = fields[21].split()[0] if fields[21] else ""
+    try:
+        dst_port = int(dst_raw)
+    except ValueError:
+        dst_port = 0
+
+    if dst_port in (1514, 1515):
+        return True
+
+    if proto == "tcp" and len(fields) >= 24:
+        tcp_flags = (fields[23].split()[0] if fields[23] else "").upper()
+        if "S" not in tcp_flags and ("A" in tcp_flags or "R" in tcp_flags):
+            return True
+
+    return False
+
+
 def should_ignore_alert(src_ip: str, dest_ip: str, full_log: str) -> bool:
     """Bộ lọc bỏ qua toàn diện các cảnh báo Broadcast, Multicast và gói tin decode nhiễu"""
     if is_broadcast_or_ignored(src_ip) or is_broadcast_or_ignored(dest_ip):
@@ -64,14 +99,56 @@ def should_ignore_alert(src_ip: str, dest_ip: str, full_log: str) -> bool:
 
     # Bỏ qua các cảnh báo lỗi decode giao thức nội bộ của engine Suricata (không phải signature tấn công)
     noisy_suricata_patterns = [
-        "suricata applayer detect protocol only one direction",
-        "suricata http response excessive header repetition",
-        "suricata stream "
+        "suricata applayer ",
+        "suricata http ",
+        "suricata stream ",
+        "suricata tcp ",
+        "suricata pkt ",
     ]
     if any(p in log_lower for p in noisy_suricata_patterns):
         return True
 
+    if _is_benign_filterlog_packet(full_log):
+        return True
+
     return False
+
+
+def filter_restored_case_alerts(case: dict) -> bool:
+    """Làm sạch alert nhiễu trong các Case khôi phục từ disk; trả False nếu Case hoàn toàn rỗng (case rác)."""
+    original_alerts = case.get("incident_alerts") or []
+    if not original_alerts:
+        return True
+
+    zero_slm = int(case.get("slm_calls", 0) or 0) == 0
+    kept = []
+    for a in original_alerts:
+        a_src = str(a.get("src_ip", "") or "")
+        a_dst = str(a.get("dest_ip", "") or "")
+        title = str(a.get("title", "") or "")
+        full_log = str(a.get("full_log", "") or "")
+
+        if should_ignore_alert(a_src, a_dst, f"{title} {full_log}"):
+            continue
+
+        if zero_slm:
+            src_port, dst_port = extract_ports_from_alert(a, full_log)
+            if is_server_response_flow(a_src, a_dst, src_port, dst_port, title=title, full_log=full_log):
+                continue
+
+        kept.append(a)
+
+    if not kept:
+        return False
+
+    if len(kept) != len(original_alerts):
+        case["incident_alerts"] = kept
+        orig_count = int(case.get("alert_count", len(original_alerts)) or len(original_alerts))
+        if orig_count <= 200:
+            removed = len(original_alerts) - len(kept)
+            case["alert_count"] = max(len(kept), orig_count - removed)
+
+    return True
 
 def extract_ip(data: dict) -> str:
     """
@@ -302,9 +379,41 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
         dest_ip = str(safe_get(data, "data", "dstip") or safe_get(data, "data", "dst_ip") or data.get("dstip") or "unknown")
         victim_ip = dest_ip if is_valid_ip(dest_ip) else (agent_ip if is_valid_ip(agent_ip) else "unknown")
 
-    # Bộ lọc bỏ qua Broadcast / Multicast / Host GPU / Suricata Protocol Decode Noise
-    if should_ignore_alert(src_ip, dest_ip, full_log):
+    rule_desc = rule.get("description", "Cảnh báo an ninh")
+
+    # Bộ lọc bỏ qua Broadcast / Multicast / Host GPU / Suricata Protocol Decode Noise / filterlog out-of-state
+    if should_ignore_alert(src_ip, dest_ip, f"{rule_desc} {full_log}"):
         return None
+
+    # Trích xuất sớm tên Signature Suricata để chuẩn hóa chiều kết nối (Server Response -> Client Attacker)
+    title_str = rule_desc
+    sig_suffix = ""
+    if rule_id == "100200" and full_log:
+        m_sig = re.search(
+            r'\[\d+:\d+:\d+\]\s*([^\[]+?)\s*(?:\[\*\*\]\s*)?(?:\[Classification:\s*([^\]]+)\])?\s*\[Priority:',
+            full_log,
+        )
+        if m_sig:
+            sig_name = m_sig.group(1).strip()
+            sig_class = (m_sig.group(2) or "").strip()
+            class_suffix = f" [{sig_class}]" if sig_class else ""
+            sig_suffix = f"Suricata NIDS: {sig_name}{class_suffix}"
+
+    if not is_fim:
+        norm_src, norm_dst, _sp, _dp, was_flipped = normalize_network_direction(
+            src_ip,
+            dest_ip,
+            title=sig_suffix or title_str,
+            full_log=full_log,
+            data=data,
+        )
+        if was_flipped:
+            src_ip = norm_src
+            dest_ip = norm_dst
+            victim_ip = dest_ip if is_valid_ip(dest_ip) else (agent_ip if is_valid_ip(agent_ip) else "unknown")
+
+    if sig_suffix:
+        title_str = f"{sig_suffix} ({src_ip} -> {dest_ip})"
 
     # Cơ chế Analysis Cooldown (Rule 7):
     # - Với FIM giữ nguyên cooldown 60s cho cặp (agent, file, hash)
@@ -334,16 +443,6 @@ def process_alert_event(data: dict, is_historical: bool = False, seen_ids: deque
     source_label = "Wazuh FIM (syscheck)" if is_fim else (
         "pfSense / Suricata Syslog" if any(g in rule_groups for g in ["pfsense", "suricata", "firewall_block"]) else "Wazuh SIEM"
     )
-
-    # Làm giàu tiêu đề cảnh báo Suricata bằng tên Signature thực tế trong full_log (nếu có)
-    title_str = rule.get("description", "Cảnh báo an ninh")
-    if rule_id == "100200" and full_log:
-        m_sig = re.search(r'\[\d+:\d+:\d+\]\s*([^\[]+?)\s*(?:\[Classification:\s*([^\]]+)\])?\s*\[Priority:', full_log)
-        if m_sig:
-            sig_name = m_sig.group(1).strip()
-            sig_class = (m_sig.group(2) or "").strip()
-            class_suffix = f" [{sig_class}]" if sig_class else ""
-            title_str = f"Suricata NIDS: {sig_name}{class_suffix} ({src_ip} -> {dest_ip})"
 
     event = AlertEvent(
         source=source_label,

@@ -5,15 +5,17 @@ import time
 import threading
 from datetime import datetime
 from typing import Optional, Dict, List, Any, Tuple
-from web.state import STATE, log_event, save_persistent_state
+from web.state import STATE, log_event, save_persistent_state, format_vn_time
 
 CASE_IDLE_TIMEOUT_SECONDS = int(os.getenv("SOC_CASE_IDLE_TIMEOUT", "1800"))     # 30 phút không có alert mới
 CASE_MAX_DURATION_SECONDS = int(os.getenv("SOC_CASE_MAX_DURATION", "14400"))   # Trần 4 giờ cho mỗi case
+CASE_ANALYZING_TIMEOUT_SECONDS = int(os.getenv("SOC_CASE_ANALYZING_TIMEOUT", "90"))  # Tự mở khóa nếu SLM treo > 90s
 LINK_TIME_WINDOW_SECONDS = int(os.getenv("SOC_CASE_LINK_WINDOW", "1800"))      # Cửa sổ liên kết 30 phút Mạng -> Endpoint
 SLM_ALERT_MILESTONES = {10, 25, 50}
 MAX_INCIDENT_ALERTS_PER_CASE = 200
 MAX_STORED_CASES = 100
 MAX_STORED_INCIDENTS = 50
+COMMON_SERVICE_PORTS = {80, 443, 3000, 3306, 3389, 5000, 5432, 6379, 8000, 8080, 8443, 9000}
 
 VERDICT_RANK = {
     "FALSE POSITIVE": 1,
@@ -42,7 +44,133 @@ _CASE_LOCK = threading.RLock()
 
 
 def _format_ts(ts: float) -> str:
-    return datetime.fromtimestamp(ts).strftime("%H:%M:%S")
+    return format_vn_time(ts)
+
+
+def _safe_int_port(val: Any) -> int:
+    try:
+        p = int(str(val).strip())
+        return p if 0 < p <= 65535 else 0
+    except Exception:
+        return 0
+
+
+def extract_ports_from_alert(data: Optional[Dict[str, Any]] = None, full_log: str = "") -> Tuple[int, int]:
+    """Trích xuất (src_port, dest_port) từ JSON alert hoặc từ chuỗi full_log Suricata/filterlog."""
+    src_port = 0
+    dest_port = 0
+    if isinstance(data, dict):
+        nested = data.get("data") if isinstance(data.get("data"), dict) else {}
+        src_port = (
+            _safe_int_port(nested.get("srcport"))
+            or _safe_int_port(nested.get("src_port"))
+            or _safe_int_port(data.get("srcport"))
+            or _safe_int_port(data.get("src_port"))
+        )
+        dest_port = (
+            _safe_int_port(nested.get("dstport"))
+            or _safe_int_port(nested.get("dst_port"))
+            or _safe_int_port(nested.get("dest_port"))
+            or _safe_int_port(data.get("dstport"))
+            or _safe_int_port(data.get("dst_port"))
+            or _safe_int_port(data.get("dest_port"))
+        )
+
+    if (src_port == 0 or dest_port == 0) and full_log:
+        m = re.search(
+            r'\b\d{1,3}(?:\.\d{1,3}){3}:(\d{1,5})\s*->\s*\d{1,3}(?:\.\d{1,3}){3}:(\d{1,5})\b',
+            full_log,
+        )
+        if m:
+            src_port = src_port or _safe_int_port(m.group(1))
+            dest_port = dest_port or _safe_int_port(m.group(2))
+        elif "filterlog" in full_log:
+            after_colon = full_log.split("filterlog", 1)[1]
+            if ":" in after_colon:
+                csv_part = after_colon.split(":", 1)[1].strip()
+                fields = [f.strip() for f in csv_part.split(",")]
+                if len(fields) >= 22 and fields[8] == "4" and fields[16].lower() in ("tcp", "udp"):
+                    src_port = src_port or _safe_int_port(fields[20])
+                    dest_port = dest_port or _safe_int_port(fields[21])
+                elif len(fields) >= 19 and fields[8] == "6" and fields[12].lower() in ("tcp", "udp"):
+                    src_port = src_port or _safe_int_port(fields[17])
+                    dest_port = dest_port or _safe_int_port(fields[18])
+
+    return src_port, dest_port
+
+
+def is_server_response_flow(
+    src_ip: str,
+    dest_ip: str,
+    src_port: int,
+    dest_port: int,
+    title: str = "",
+    full_log: str = "",
+) -> bool:
+    """
+    Nhận diện linh động gói tin phản hồi từ Server về Client (không hardcode subnet):
+    Chỉ coi là gói trả lời khi có bất đối xứng cổng (src_port dịch vụ -> dest_port ephemeral >= 1024)
+    VÀ thỏa ngữ cảnh signature phản hồi hoặc dest_ip đang mở Case tấn công vào src_ip.
+    """
+    clean_src = str(src_ip or "").strip()
+    clean_dst = str(dest_ip or "").strip()
+    if (
+        clean_src.lower() in ["unknown", "none", "n/a", ""]
+        or clean_dst.lower() in ["unknown", "none", "n/a", ""]
+        or clean_src == clean_dst
+    ):
+        return False
+
+    is_src_service = (0 < src_port < 1024) or (src_port in COMMON_SERVICE_PORTS)
+    is_dst_ephemeral = (dest_port >= 1024) and (dest_port not in COMMON_SERVICE_PORTS)
+    if not (is_src_service and is_dst_ephemeral):
+        return False
+
+    text = f"{title} {full_log}".lower()
+    response_patterns = (
+        "web_server 403",
+        "web_server 401",
+        "web_server 404",
+        "web_server 500",
+        "attack_response",
+        "http response",
+        "unable to match response",
+    )
+    if any(p in text for p in response_patterns):
+        return True
+
+    with _CASE_LOCK:
+        for c in STATE.get("cases", []):
+            if (
+                isinstance(c, dict)
+                and c.get("status") != "CLOSED"
+                and c.get("domain") == "NETWORK"
+                and c.get("src_ip") == clean_dst
+                and clean_src in (c.get("victim_ips") or [])
+            ):
+                return True
+    return False
+
+
+def normalize_network_direction(
+    src_ip: str,
+    dest_ip: str,
+    title: str = "",
+    full_log: str = "",
+    src_port: int = 0,
+    dest_port: int = 0,
+    data: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str, int, int, bool]:
+    """Chuẩn hóa chiều Attacker -> Victim nếu alert bắt trên gói phản hồi từ Server."""
+    sp, dp = src_port, dest_port
+    if sp == 0 or dp == 0:
+        ext_sp, ext_dp = extract_ports_from_alert(data, full_log)
+        sp = sp or ext_sp
+        dp = dp or ext_dp
+
+    if is_server_response_flow(src_ip, dest_ip, sp, dp, title=title, full_log=full_log):
+        return str(dest_ip).strip(), str(src_ip).strip(), dp, sp, True
+    return str(src_ip).strip(), str(dest_ip).strip(), sp, dp, False
 
 
 def _extract_mitre_codes(mitre_items: Any) -> List[str]:
@@ -335,9 +463,29 @@ def ingest_alert_into_case(alert_summary: Dict[str, Any], now_ts: Optional[float
         close_expired_cases(ts)
         cases = STATE.setdefault("cases", [])
 
-        domain, corr_key, src_ip, agent_id, victim_ip = _determine_domain_and_key(alert_summary)
-        agent_name = str(alert_summary.get("agent") or "unknown").strip()
-        agent_ip = str(alert_summary.get("agent_ip") or "unknown").strip()
+        normalized_alert = dict(alert_summary)
+        domain, corr_key, src_ip, agent_id, victim_ip = _determine_domain_and_key(normalized_alert)
+        if domain == "NETWORK":
+            raw_dest = str(normalized_alert.get("dest_ip") or normalized_alert.get("victim_ip") or "unknown").strip()
+            norm_src, norm_dst, _, _, swapped = normalize_network_direction(
+                src_ip,
+                raw_dest,
+                title=str(normalized_alert.get("title") or ""),
+                full_log=str(normalized_alert.get("full_log") or ""),
+                src_port=_safe_int_port(normalized_alert.get("src_port")),
+                dest_port=_safe_int_port(normalized_alert.get("dest_port")),
+                data=normalized_alert,
+            )
+            if swapped:
+                src_ip = norm_src
+                victim_ip = norm_dst
+                corr_key = f"NET:{norm_src}"
+                normalized_alert["src_ip"] = norm_src
+                normalized_alert["dest_ip"] = norm_dst
+                normalized_alert["victim_ip"] = norm_dst
+
+        agent_name = str(normalized_alert.get("agent") or "unknown").strip()
+        agent_ip = str(normalized_alert.get("agent_ip") or "unknown").strip()
 
         # Đăng ký ánh xạ agent_id <-> IP vào registry toàn cục
         ep_ip_to_register = agent_ip if agent_ip.lower() not in ["unknown", "none", ""] else victim_ip
@@ -486,44 +634,64 @@ def ingest_alert_into_case(alert_summary: Dict[str, Any], now_ts: Optional[float
             seen_payloads.append(encoded_payload)
 
         # Lưu alert gốc vào incident_alerts
-        audit_rec = _build_audit_alert_record(alert_summary, ts)
+        audit_rec = _build_audit_alert_record(normalized_alert, ts)
         inc_alerts = active_case.setdefault("incident_alerts", [])
         inc_alerts.append(audit_rec)
         if len(inc_alerts) > MAX_INCIDENT_ALERTS_PER_CASE:
             inc_alerts.pop(0)
 
-        # Quyết định gọi SLM (Qwen)
+        # Tự mở khóa nếu luồng SLM trước đó bị treo quá ngưỡng thời gian
+        if active_case.get("is_analyzing"):
+            analyzing_since = float(active_case.get("analyzing_since_ts", 0) or 0)
+            if analyzing_since <= 0 or (ts - analyzing_since) >= CASE_ANALYZING_TIMEOUT_SECONDS:
+                active_case["is_analyzing"] = False
+                active_case.pop("analyzing_since_ts", None)
+
+        novelty_reasons = []
+        if has_new_rule:
+            novelty_reasons.append(f"Rule mới ({rule_id})")
+        if has_new_mitre:
+            novelty_reasons.append(f"MITRE mới ({','.join(mitre_codes)})")
+        if has_new_hash:
+            novelty_reasons.append(f"Hash mới ({primary_hash[:12]}...)")
+        if has_new_payload:
+            novelty_reasons.append("Payload mã hóa mới")
+        if has_higher_level:
+            novelty_reasons.append(f"Mức độ tăng lên level {level}")
+
+        # Quyết định gọi SLM (Qwen) - Chống kẹt SLM: 0 và không nuốt tình tiết mới
         should_call_slm = False
         slm_reason = "Alert trùng lặp cùng loại — chỉ tăng bộ đếm"
+        pending_reason = active_case.get("pending_slm_reason")
+        has_zero_slm = int(active_case.get("slm_calls", 0) or 0) == 0
 
         if is_new_case:
             should_call_slm = True
             slm_reason = "Alert đầu tiên mở Case"
+            active_case.pop("pending_slm_reason", None)
         elif active_case.get("is_analyzing"):
             should_call_slm = False
-            slm_reason = "Case đang được SLM phân tích ở luồng khác — gộp vào timeline"
-        else:
-            novelty_reasons = []
-            if has_new_rule:
-                novelty_reasons.append(f"Rule mới ({rule_id})")
-            if has_new_mitre:
-                novelty_reasons.append(f"MITRE mới ({','.join(mitre_codes)})")
-            if has_new_hash:
-                novelty_reasons.append(f"Hash mới ({primary_hash[:12]}...)")
-            if has_new_payload:
-                novelty_reasons.append("Payload mã hóa mới")
-            if has_higher_level:
-                novelty_reasons.append(f"Mức độ tăng lên level {level}")
-
             if novelty_reasons:
-                should_call_slm = True
-                slm_reason = "Tình tiết mới: " + ", ".join(novelty_reasons)
-            elif (
-                active_case["alert_count"] in SLM_ALERT_MILESTONES
-                and str(active_case.get("verdict", "")).upper() != "TRUE POSITIVE"
-            ):
-                should_call_slm = True
-                slm_reason = f"Đạt ngưỡng kiểm tra {active_case['alert_count']} alerts"
+                active_case["pending_slm_reason"] = "Tình tiết mới: " + ", ".join(novelty_reasons)
+            slm_reason = "Case đang được SLM phân tích ở luồng khác — gộp vào timeline"
+        elif has_zero_slm:
+            should_call_slm = True
+            slm_reason = pending_reason or "Case chưa có kết quả SLM — kích hoạt phân tích bù"
+            active_case.pop("pending_slm_reason", None)
+        elif novelty_reasons:
+            should_call_slm = True
+            slm_reason = "Tình tiết mới: " + ", ".join(novelty_reasons)
+            active_case.pop("pending_slm_reason", None)
+        elif pending_reason:
+            should_call_slm = True
+            slm_reason = pending_reason
+            active_case.pop("pending_slm_reason", None)
+        elif (
+            active_case["alert_count"] in SLM_ALERT_MILESTONES
+            and str(active_case.get("verdict", "")).upper() != "TRUE POSITIVE"
+        ):
+            should_call_slm = True
+            slm_reason = f"Đạt ngưỡng kiểm tra {active_case['alert_count']} alerts"
 
         evaluate_and_escalate_severity(active_case)
         _recompute_case_stats()
@@ -717,6 +885,7 @@ def finalize_case_analysis(
 
         now_ts = time.time()
         case["is_analyzing"] = False
+        case.pop("analyzing_since_ts", None)
         case["slm_calls"] = int(case.get("slm_calls", 0)) + 1
         case["updated_at"] = _format_ts(now_ts)
 
@@ -749,6 +918,9 @@ def finalize_case_analysis(
 
         evaluate_and_escalate_severity(case)
         correlate_cross_domain_cases(now_ts)
+        from core.contingency_room import sync_case_decisions
+
+        sync_case_decisions(case)
         _recompute_case_stats()
         save_persistent_state()
         return case

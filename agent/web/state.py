@@ -1,9 +1,23 @@
 import os
 import json
+import time
 import threading
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+os.environ.setdefault("TZ", "Asia/Ho_Chi_Minh")
+if hasattr(time, "tzset"):
+    time.tzset()
+
+VN_TZ = timezone(timedelta(hours=7))
+
+
+def format_vn_time(ts: Optional[float] = None, fmt: str = "%H:%M:%S") -> str:
+    """Định dạng mốc thời gian theo múi giờ Việt Nam (UTC+7)."""
+    if ts is None:
+        return datetime.now(VN_TZ).strftime(fmt)
+    return datetime.fromtimestamp(float(ts), tz=VN_TZ).strftime(fmt)
 
 STATE_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "soc_state.json")
 _STATE_LOCK = threading.RLock()
@@ -27,6 +41,8 @@ STATE = {
     "parent_incidents": [],
     "assets": [],
     "dismissed_asset_agents": [],
+    "contingency_rooms": [],
+    "tactical_decisions": [],
     "reasoning_stream": deque(maxlen=50),
     "decisions": deque(maxlen=30)
 }
@@ -60,9 +76,11 @@ def save_persistent_state(state_file: Optional[str] = None) -> bool:
                 "parent_incidents": list(STATE.get("parent_incidents", [])),
                 "assets": list(STATE.get("assets", [])),
                 "dismissed_asset_agents": list(STATE.get("dismissed_asset_agents", [])),
+                "contingency_rooms": list(STATE.get("contingency_rooms", [])),
+                "tactical_decisions": list(STATE.get("tactical_decisions", [])),
                 "decisions": list(STATE.get("decisions", [])),
                 "reasoning_stream": list(STATE.get("reasoning_stream", [])),
-                "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "saved_at": format_vn_time(fmt="%Y-%m-%d %H:%M:%S"),
             }
             tmp_path = f"{target_path}.tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -111,24 +129,87 @@ def load_persistent_state(state_file: Optional[str] = None) -> bool:
                 STATE["agent_ip_registry"] = dict(data["agent_ip_registry"])
 
             if isinstance(data.get("cases"), list):
-                # Đảm bảo reset cờ is_analyzing nếu container khởi động lại giữa chừng
+                from watchers.tailers import filter_restored_case_alerts
+
+                # Đảm bảo reset cờ is_analyzing và chuẩn hóa múi giờ UTC+7 khi nạp lại soc_state.json
                 restored_cases = []
                 for c in data["cases"][:100]:
-                    if isinstance(c, dict):
-                        c["is_analyzing"] = False
-                        restored_cases.append(c)
+                    if not isinstance(c, dict):
+                        continue
+                    c["is_analyzing"] = False
+                    c.pop("analyzing_since_ts", None)
+                    created_ts = c.get("created_at_ts") or c.get("first_alert_ts")
+                    if created_ts:
+                        c["created_at"] = format_vn_time(created_ts)
+                    updated_ts = c.get("last_alert_ts") or created_ts
+                    if updated_ts:
+                        c["updated_at"] = format_vn_time(updated_ts)
+                    for a in c.get("incident_alerts", []) or []:
+                        if isinstance(a, dict) and a.get("captured_at_ts"):
+                            a["captured_at"] = format_vn_time(a["captured_at_ts"])
+
+                    if not filter_restored_case_alerts(c):
+                        continue
+                    restored_cases.append(c)
+
                 STATE["cases"] = restored_cases
                 STATE["stats"]["total_cases"] = len(restored_cases)
                 STATE["stats"]["active_cases"] = sum(1 for c in restored_cases if c.get("status") != "CLOSED")
 
             if isinstance(data.get("parent_incidents"), list):
-                STATE["parent_incidents"] = list(data["parent_incidents"][:50])
+                restored_parents = []
+                for p in data["parent_incidents"][:50]:
+                    if not isinstance(p, dict):
+                        continue
+                    for ev in p.get("combined_timeline", []) or []:
+                        if isinstance(ev, dict) and ev.get("ts"):
+                            ev["time"] = format_vn_time(ev["ts"])
+                    restored_parents.append(p)
+                STATE["parent_incidents"] = restored_parents
 
             if isinstance(data.get("assets"), list):
                 STATE["assets"] = [dict(a) for a in data["assets"] if isinstance(a, dict)]
 
             if isinstance(data.get("dismissed_asset_agents"), list):
                 STATE["dismissed_asset_agents"] = [str(x) for x in data["dismissed_asset_agents"] if str(x).strip()]
+
+            if isinstance(data.get("contingency_rooms"), list):
+                restored_rooms = []
+                for room in data["contingency_rooms"][:50]:
+                    if not isinstance(room, dict):
+                        continue
+                    r_copy = dict(room)
+                    r_copy["ai_thinking"] = False
+                    if r_copy.get("created_at_ts"):
+                        r_copy["created_at"] = format_vn_time(r_copy["created_at_ts"])
+                    if r_copy.get("updated_at_ts"):
+                        r_copy["updated_at"] = format_vn_time(r_copy["updated_at_ts"])
+                    msgs = []
+                    for m in r_copy.get("messages", []) or []:
+                        if not isinstance(m, dict):
+                            continue
+                        m_copy = dict(m)
+                        if m_copy.get("ts"):
+                            m_copy["time"] = format_vn_time(m_copy["ts"])
+                        msgs.append(m_copy)
+                    r_copy["messages"] = msgs
+                    restored_rooms.append(r_copy)
+                STATE["contingency_rooms"] = restored_rooms
+                if restored_rooms:
+                    STATE["_rooms_initialized"] = True
+
+            if isinstance(data.get("tactical_decisions"), list):
+                restored_decs = []
+                for dec in data["tactical_decisions"][:200]:
+                    if not isinstance(dec, dict):
+                        continue
+                    d_copy = dict(dec)
+                    if d_copy.get("created_at_ts"):
+                        d_copy["created_at"] = format_vn_time(d_copy["created_at_ts"])
+                    if d_copy.get("reverted_at_ts"):
+                        d_copy["reverted_at"] = format_vn_time(d_copy["reverted_at_ts"])
+                    restored_decs.append(d_copy)
+                STATE["tactical_decisions"] = restored_decs
 
             if isinstance(data.get("decisions"), list):
                 STATE["decisions"] = deque(data["decisions"][:30], maxlen=30)
@@ -287,7 +368,7 @@ def get_agent_memory_context(
 
 def log_event(step_type: str, message: str):
     entry = {
-        "time": datetime.now().strftime("%H:%M:%S"),
+        "time": format_vn_time(),
         "type": step_type,
         "message": message
     }

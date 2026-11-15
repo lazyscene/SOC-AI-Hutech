@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
@@ -24,6 +25,7 @@ from core.case_manager import (
     compute_worst_verdict,
     update_case_status,
     build_and_save_case_graph,
+    normalize_network_direction,
 )
 from core.asset_manager import (
     ensure_default_assets,
@@ -31,11 +33,25 @@ from core.asset_manager import (
     upsert_asset,
     delete_asset,
 )
+from core.contingency_room import (
+    ensure_default_rooms,
+    create_contingency_room,
+    update_contingency_room,
+    delete_contingency_room,
+    attach_case_to_room,
+    detach_case_from_room,
+    post_room_message,
+    create_and_execute_decision,
+    revert_tactical_decision,
+    reapply_tactical_decision,
+    get_contingency_rooms_overview,
+)
 from watchers.tailers import (
     process_alert_event,
     extract_sysmon_hashes,
     extract_hashes_and_metadata,
-    last_alert_time
+    last_alert_time,
+    should_ignore_alert,
 )
 from tools.firewall_tools import (
     validate_blockable_ip,
@@ -51,6 +67,7 @@ from web.state import (
     save_persistent_state,
     load_persistent_state,
     get_agent_memory_context,
+    format_vn_time,
 )
 
 
@@ -290,6 +307,9 @@ class TestFimAndTiIntegration(unittest.TestCase):
         STATE["parent_incidents"] = []
         STATE["assets"] = []
         STATE["dismissed_asset_agents"] = []
+        STATE["contingency_rooms"] = []
+        STATE["tactical_decisions"] = []
+        STATE.pop("_rooms_initialized", None)
 
     @patch("core.controller.call_ollama")
     def test_fim_tool_check_file_hash_executed_once_and_in_context(self, mock_llm):
@@ -647,6 +667,9 @@ class TestCaseManagement(unittest.TestCase):
         STATE["parent_incidents"] = []
         STATE["assets"] = []
         STATE["dismissed_asset_agents"] = []
+        STATE["contingency_rooms"] = []
+        STATE["tactical_decisions"] = []
+        STATE.pop("_rooms_initialized", None)
 
     @patch("core.controller.call_ollama")
     @patch("core.controller.tool_block_firewall_ip")
@@ -987,6 +1010,482 @@ class TestCaseManagement(unittest.TestCase):
         ok_del, del_msg = delete_asset(new_asset["id"])
         self.assertTrue(ok_del, del_msg)
         self.assertEqual(len(get_assets_with_case_counts()), 5)
+
+    def test_flexible_direction_filter_and_anti_stuck_slm(self):
+        """Kiểm tra lọc nhiễu Suricata/filterlog, đảo chiều response linh hoạt giữ nguyên lateral movement, chống kẹt SLM và UTC+7."""
+        from datetime import datetime, timezone, timedelta
+
+        last_alert_time.clear()
+
+        # 1. Suricata HTTP / Applayer decoder noise phải bị bỏ qua
+        raw_http_noise = {
+            "id": "noise-http-1",
+            "rule": {"id": "100200", "level": 7, "description": "Suricata NIDS Alert", "groups": ["suricata", "ids"]},
+            "agent": {"id": "001", "name": "pfsense", "ip": "192.168.1.1"},
+            "data": {"srcip": "192.168.214.10", "dstip": "192.168.63.140"},
+            "full_log": (
+                "10/30/2026-15:24:15.123456  [**] [1:2221010:1] "
+                "SURICATA HTTP unable to match response to request [**] "
+                "[Classification: Generic Protocol Command Decode] [Priority: 3] "
+                "{TCP} 192.168.214.10:3000 -> 192.168.63.140:57158"
+            ),
+        }
+        with patch("watchers.tailers.threading.Thread"):
+            ev_noise = process_alert_event(raw_http_noise, is_historical=False)
+        self.assertIsNone(ev_noise)
+        self.assertTrue(should_ignore_alert("192.168.214.10", "192.168.63.140", "SURICATA Applayer Detect protocol only one direction"))
+
+        # 2. Chiều response server -> client (403 Forbidden :80 -> :45586) phải tự động đảo về Client -> Server
+        raw_403 = {
+            "id": "resp-403-1",
+            "rule": {"id": "100200", "level": 7, "description": "Suricata NIDS Alert", "groups": ["suricata", "ids"]},
+            "agent": {"id": "001", "name": "pfsense", "ip": "192.168.1.1"},
+            "data": {"srcip": "192.168.214.10", "dstip": "192.168.63.140"},
+            "full_log": (
+                "10/30/2026-15:24:18.123456  [**] [1:2101201:10] "
+                "GPL WEB_SERVER 403 Forbidden [**] "
+                "[Classification: Attempted Information Leak] [Priority: 2] "
+                "{TCP} 192.168.214.10:80 -> 192.168.63.140:45586"
+            ),
+        }
+        with patch("watchers.tailers.threading.Thread"):
+            ev_403 = process_alert_event(raw_403, is_historical=False)
+        self.assertIsNotNone(ev_403)
+        self.assertEqual(ev_403.src_ip, "192.168.63.140")
+        self.assertEqual(ev_403.victim_ip, "192.168.214.10")
+        self.assertIn("192.168.63.140 -> 192.168.214.10", ev_403.title)
+
+        # 3. KHÔNG hardcode chiều: máy nội bộ bị nhiễm tấn công ngang (ephemeral -> 445) vẫn là attacker
+        raw_lateral = {
+            "id": "lat-smb-1",
+            "rule": {"id": "100200", "level": 10, "description": "Suricata NIDS Alert", "groups": ["suricata", "ids"]},
+            "agent": {"id": "003", "name": "victim-win10", "ip": "192.168.45.10"},
+            "data": {"srcip": "192.168.214.10", "dstip": "192.168.45.10"},
+            "full_log": (
+                "10/30/2026-15:40:00.000000  [**] [1:2024217:2] "
+                "ET EXPLOIT Possible ETERNALBLUE MS17-010 SMB RCE [**] "
+                "[Classification: Attempted Administrator Privilege Gain] [Priority: 1] "
+                "{TCP} 192.168.214.10:52000 -> 192.168.45.10:445"
+            ),
+        }
+        with patch("watchers.tailers.threading.Thread"):
+            ev_lat = process_alert_event(raw_lateral, is_historical=False)
+        self.assertIsNotNone(ev_lat)
+        self.assertEqual(ev_lat.src_ip, "192.168.214.10")
+        self.assertEqual(ev_lat.victim_ip, "192.168.45.10")
+        _, _, _, _, flipped_lat = normalize_network_direction("192.168.214.10", "192.168.45.10", full_log=raw_lateral["full_log"])
+        self.assertFalse(flipped_lat)
+
+        # 4. pfSense filterlog: bỏ out-of-state TCP PA / Wazuh 1514, giữ TCP SYN (S)
+        raw_fw_pa = {
+            "id": "fw-pa-1",
+            "rule": {"id": "100101", "level": 7, "description": "pfSense firewall blocked traffic", "groups": ["pfsense", "firewall_block"]},
+            "agent": {"id": "001", "name": "pfsense", "ip": "192.168.1.1"},
+            "data": {"srcip": "192.168.214.10", "dstip": "192.168.171.34"},
+            "full_log": "Oct 30 15:36:29 pfSense filterlog[1234]: 1,68,,1792774993,em2,match,block,in,4,0x0,,64,12407,0,DF,6,tcp,194,192.168.214.10,192.168.171.34,40598,1514,142,PA",
+        }
+        with patch("watchers.tailers.threading.Thread"):
+            ev_pa = process_alert_event(raw_fw_pa, is_historical=False)
+        self.assertIsNone(ev_pa)
+        self.assertTrue(should_ignore_alert(
+            "192.168.214.10",
+            "192.168.63.140",
+            "filterlog[99]: 1,68,,1792774993,em2,match,block,in,4,0x0,,64,12407,0,DF,6,tcp,60,192.168.214.10,192.168.63.140,80,45586,0,RA",
+        ))
+
+        raw_fw_syn = {
+            "id": "fw-syn-1",
+            "rule": {"id": "100101", "level": 7, "description": "pfSense firewall blocked traffic", "groups": ["pfsense", "firewall_block"]},
+            "agent": {"id": "001", "name": "pfsense", "ip": "192.168.1.1"},
+            "data": {"srcip": "192.168.214.10", "dstip": "192.168.45.10"},
+            "full_log": "Oct 30 15:41:00 pfSense filterlog[1234]: 1,68,,1792774994,em2,match,block,in,4,0x0,,64,12408,0,DF,6,tcp,60,192.168.214.10,192.168.45.10,55123,445,0,S",
+        }
+        with patch("watchers.tailers.threading.Thread"):
+            ev_syn = process_alert_event(raw_fw_syn, is_historical=False)
+        self.assertIsNotNone(ev_syn)
+        self.assertEqual(ev_syn.src_ip, "192.168.214.10")
+        self.assertEqual(ev_syn.victim_ip, "192.168.45.10")
+
+        # 5. Chống kẹt SLM: pending_slm_reason khi is_analyzing, tự mở khóa sau timeout >90s, slm_calls==0, và controller follow-up
+        STATE["cases"] = []
+        info1 = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100101",
+            "level": 7,
+            "title": "pfSense SYN scan to 445",
+            "src_ip": "192.168.63.140",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1046"],
+        }, now_ts=5000000.0)
+        self.assertTrue(info1["should_call_slm"])
+        case_obj = info1["case"]
+
+        case_obj["is_analyzing"] = True
+        case_obj["analyzing_since_ts"] = 5000005.0
+        info_busy = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100200",
+            "level": 10,
+            "title": "ET EXPLOIT SQLi Attempt",
+            "src_ip": "192.168.63.140",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1190"],
+        }, now_ts=5000010.0)
+        self.assertFalse(info_busy["should_call_slm"])
+        self.assertTrue(case_obj.get("pending_slm_reason"))
+
+        # Quá 90s -> tự động mở khóa is_analyzing
+        info_timeout = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100201",
+            "level": 9,
+            "title": "ET WEB_SERVER Directory Traversal",
+            "src_ip": "192.168.63.140",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1190"],
+        }, now_ts=5000110.0)
+        self.assertTrue(info_timeout["should_call_slm"])
+        self.assertFalse(case_obj["is_analyzing"])
+
+        # Nếu slm_calls == 0 và không bị kẹt lock -> tự kích hoạt lại SLM
+        case_obj["slm_calls"] = 0
+        info_zero = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100201",
+            "level": 9,
+            "title": "ET WEB_SERVER Directory Traversal",
+            "src_ip": "192.168.63.140",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1190"],
+        }, now_ts=5000115.0)
+        self.assertTrue(info_zero["should_call_slm"])
+
+        # Kiểm tra controller finally: phát hiện pending_slm_reason đặt trong lúc SLM chạy -> xếp lịch follow-up thread
+        STATE["cases"] = []
+        def fake_llm_with_midflight_alert(*args, **kwargs):
+            if STATE["cases"]:
+                STATE["cases"][0]["pending_slm_reason"] = "Bổ sung rule mới trong lúc đang phân tích"
+            return {"message": {"content": "FINAL VERDICT: SUSPICIOUS\nMITRE: T1046\nDo quét cổng."}}
+
+        with patch("core.controller.call_ollama", side_effect=fake_llm_with_midflight_alert), \
+             patch("core.controller.tool_check_ip_reputation", return_value="Threat Intel Mock: 192.168.63.140 Clean"), \
+             patch("core.controller.tool_block_firewall_ip", return_value="Thành công: Đã chặn 192.168.63.140 (Mock)"), \
+             patch("core.controller.threading.Thread") as mock_thread:
+            run_agent_loop({
+                "source": "pfSense / Suricata Syslog",
+                "rule_id": "100101",
+                "level": 7,
+                "title": "SYN Scan detected",
+                "src_ip": "192.168.63.140",
+                "victim_ip": "192.168.214.10",
+                "mitre": ["T1046"],
+            })
+            self.assertTrue(mock_thread.called)
+            followup_payload = mock_thread.call_args.kwargs["args"][0]
+            self.assertTrue(followup_payload.get("_followup_slm"))
+            self.assertEqual(followup_payload.get("_replay_case_id"), STATE["cases"][0]["id"])
+
+        # 6. Múi giờ UTC+7 (Asia/Ho_Chi_Minh) & làm sạch CASE-0004 nhiễu khi load_persistent_state
+        sample_ts = 1794670455.0
+        expected_vn = datetime.fromtimestamp(sample_ts, timezone(timedelta(hours=7))).strftime("%H:%M:%S")
+        self.assertEqual(format_vn_time(sample_ts), expected_vn)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_state_file = os.path.join(tmpdir, "soc_state.json")
+            persisted_payload = {
+                "cases": [
+                    {
+                        "id": "CASE-0004",
+                        "domain": "NETWORK",
+                        "status": "OPEN",
+                        "slm_calls": 0,
+                        "alert_count": 3,
+                        "first_alert_ts": sample_ts,
+                        "last_alert_ts": sample_ts,
+                        "incident_alerts": [
+                            {
+                                "src_ip": "192.168.214.10",
+                                "dest_ip": "192.168.63.140",
+                                "title": "Suricata NIDS: SURICATA HTTP unable to match response to request",
+                                "full_log": "{TCP} 192.168.214.10:3000 -> 192.168.63.140:57158",
+                            },
+                            {
+                                "src_ip": "192.168.214.10",
+                                "dest_ip": "192.168.63.140",
+                                "title": "Suricata NIDS: GPL WEB_SERVER 403 Forbidden",
+                                "full_log": "{TCP} 192.168.214.10:80 -> 192.168.63.140:45586",
+                            },
+                            {
+                                "src_ip": "192.168.214.10",
+                                "dest_ip": "192.168.171.34",
+                                "title": "pfSense firewall blocked traffic",
+                                "full_log": "filterlog[1]: 1,68,,1792774993,em2,match,block,in,4,0x0,,64,12407,0,DF,6,tcp,194,192.168.214.10,192.168.171.34,40598,1514,142,PA",
+                            },
+                        ],
+                    },
+                    {
+                        "id": "CASE-0001",
+                        "domain": "NETWORK",
+                        "status": "OPEN",
+                        "slm_calls": 1,
+                        "alert_count": 2,
+                        "first_alert_ts": sample_ts,
+                        "last_alert_ts": sample_ts,
+                        "created_at": "OLD_UTC",
+                        "updated_at": "OLD_UTC",
+                        "incident_alerts": [
+                            {
+                                "src_ip": "192.168.63.140",
+                                "dest_ip": "192.168.214.10",
+                                "title": "ET SCAN Nmap SYN",
+                                "full_log": "SYN scan 192.168.63.140:55555 -> 192.168.214.10:80",
+                                "captured_at_ts": sample_ts,
+                                "captured_at": "OLD_UTC",
+                            }
+                        ],
+                    },
+                ],
+                "assets": [],
+                "decisions": [],
+                "reasoning_stream": [],
+                "parent_incidents": [],
+            }
+            with open(temp_state_file, "w", encoding="utf-8") as f:
+                json.dump(persisted_payload, f)
+
+            with patch.dict(os.environ, {"SOC_DISABLE_STATE_PERSISTENCE": "0"}):
+                self.assertTrue(load_persistent_state(state_file=temp_state_file))
+
+            self.assertEqual(len(STATE["cases"]), 1)
+            self.assertEqual(STATE["cases"][0]["id"], "CASE-0001")
+            self.assertEqual(STATE["cases"][0]["created_at"], expected_vn)
+            self.assertEqual(STATE["cases"][0]["updated_at"], expected_vn)
+            self.assertEqual(STATE["cases"][0]["incident_alerts"][0]["captured_at"], expected_vn)
+
+    def test_contingency_room_drag_case_board_and_reversible_decisions(self):
+        """Kiểm tra Contingency Room: tạo phòng, kéo Case vào Room, Dashboard Board, Chat @ai & Decisions có nút Đảo ngược."""
+        ensure_default_assets()
+        defaults = ensure_default_rooms()
+        self.assertEqual(len(defaults), 1)
+        self.assertEqual(defaults[0]["id"], "ROOM-0001")
+
+        # 1. Tạo Room tác chiến mới
+        ok_room, room2, msg_room = create_contingency_room({
+            "name": "Chiến dịch ứng phó Webshell Server .10",
+            "stage": "Containment",
+            "priority": "CRITICAL",
+        })
+        self.assertTrue(ok_room, msg_room)
+        self.assertEqual(room2["id"], "ROOM-0002")
+
+        # 2. Tạo Case Network & Endpoint với hành động SOAR tự động -> đồng bộ thành Decisions có thể đảo ngược
+        net_info = ingest_alert_into_case({
+            "source": "pfSense / Suricata Syslog",
+            "rule_id": "100300",
+            "level": 10,
+            "title": "ET EXPLOIT Web Shell Upload Attempt",
+            "src_ip": "192.168.63.240",
+            "victim_ip": "192.168.214.10",
+            "mitre": ["T1190"],
+        }, now_ts=6000000.0)
+        net_id = net_info["case"]["id"]
+        STATE["stats"]["blocked_ips"].append("192.168.63.240")
+        STATE["pfsense_block_details"]["192.168.63.240"] = "AI SOC blocked: T1190"
+        finalize_case_analysis(
+            net_id,
+            verdict="TRUE POSITIVE",
+            mitre_tags=["T1190"],
+            has_blocked_ip=True,
+        )
+
+        ep_info = ingest_alert_into_case({
+            "source": "Wazuh FIM (syscheck)",
+            "rule_id": "554",
+            "level": 10,
+            "title": "Malicious webshell dropped and executed",
+            "agent": "victim-linux-server",
+            "agent_id": "002",
+            "src_ip": "unknown",
+            "agent_ip": "192.168.214.10",
+            "victim_ip": "192.168.214.10",
+            "file_path": "/var/www/html/shell.php",
+            "mitre": ["T1505"],
+        }, now_ts=6000050.0)
+        ep_id = ep_info["case"]["id"]
+        STATE["endpoint_containment"]["002"] = {
+            "agent_id": "002",
+            "isolation_status": "ISOLATED (LOCKED)",
+            "reason": "Webshell execution",
+            "updated_at": "23:45:00",
+        }
+        finalize_case_analysis(
+            ep_id,
+            verdict="TRUE POSITIVE",
+            mitre_tags=["T1505"],
+            endpoint_response="Phase 1 -> Phase 2: Giữ khóa cô lập mạng",
+        )
+
+        # 3. Kéo cả 2 Case vào ROOM-0002 & kiểm tra Board metrics
+        ok_a1, r_after1, _ = attach_case_to_room("ROOM-0002", net_id)
+        self.assertTrue(ok_a1)
+        ok_a2, r_after2, _ = attach_case_to_room("ROOM-0002", ep_id)
+        self.assertTrue(ok_a2)
+
+        board = r_after2["board"]
+        self.assertEqual(board["case_count"], 2)
+        self.assertEqual(board["in_progress_cases_count"], 2)
+        self.assertEqual(board["exploited_open_count"], 2)
+        self.assertGreaterEqual(board["compromised_assets_count"], 1)
+        self.assertEqual(board["unflagged_assets_count"], 5 - board["compromised_assets_count"])
+        self.assertGreaterEqual(board["open_decisions_count"], 2)
+        self.assertEqual(board["exceptions_reverted_count"], 0)
+        self.assertGreaterEqual(board["mitre_techniques_count"], 2)
+
+        # 4. Thực thi Decision thủ công (FLAG_ASSET, CLOSE_CASE) và kiểm tra Đảo ngược thực tế (kể cả BLOCK_IP & ISOLATE_ENDPOINT)
+        with patch("tools.firewall_tools.tool_block_firewall_ip", return_value="Thành công: Đã thêm IP 192.168.63.240"), \
+             patch("tools.firewall_tools.tool_unblock_firewall_ip", return_value="Thành công: Đã gỡ IP 192.168.63.240") as mock_unblock, \
+             patch("tools.wazuh_tools.dispatch_wazuh_ar", return_value=(True, "Wazuh AR OK")) as mock_wazuh:
+
+            # 4a. FLAG_ASSET -> đảo ngược gỡ cờ
+            ok_flag, flag_res, _ = create_and_execute_decision("ROOM-0002", {
+                "case_id": ep_id,
+                "action_type": "FLAG_ASSET",
+                "target": "ASSET-0004",
+                "reason": "Nghi ngờ lây lan sang Win10",
+            })
+            self.assertTrue(ok_flag)
+            self.assertIn("ASSET-0004", flag_res["room"]["flagged_asset_ids"])
+            self.assertGreaterEqual(flag_res["room"]["board"]["compromised_assets_count"], 2)
+
+            ok_unflag, unflag_res, _ = revert_tactical_decision(flag_res["decision"]["id"], reason="Win10 không bị ảnh hưởng")
+            self.assertTrue(ok_unflag)
+            self.assertEqual(unflag_res["decision"]["status"], "REVERTED")
+            self.assertNotIn("ASSET-0004", unflag_res["room"]["flagged_asset_ids"])
+
+            # 4b. CLOSE_CASE -> đảo ngược mở lại Case
+            ok_close, close_res, _ = create_and_execute_decision("ROOM-0002", {
+                "case_id": net_id,
+                "action_type": "CLOSE_CASE",
+                "target": net_id,
+                "reason": "Đóng tạm để kiểm tra",
+            })
+            self.assertTrue(ok_close)
+            self.assertEqual(next(c for c in STATE["cases"] if c["id"] == net_id)["status"], "CLOSED")
+
+            ok_reopen, _, _ = revert_tactical_decision(close_res["decision"]["id"], reason="Phát hiện thêm log mới")
+            self.assertTrue(ok_reopen)
+            self.assertEqual(next(c for c in STATE["cases"] if c["id"] == net_id)["status"], "OPEN")
+
+            # 4c. Đảo ngược Decision AI_SOAR BLOCK_IP -> gỡ IP khỏi blocked_ips & gọi tool_unblock_firewall_ip -> Reapply
+            block_dec = next(d for d in STATE["tactical_decisions"] if d["action_type"] == "BLOCK_IP" and d["target"] == "192.168.63.240")
+            ok_rev_blk, rev_blk_res, _ = revert_tactical_decision(block_dec["id"], reason="Gỡ chặn kiểm thử")
+            self.assertTrue(ok_rev_blk)
+            self.assertTrue(mock_unblock.called)
+            self.assertEqual(rev_blk_res["decision"]["status"], "REVERTED")
+            self.assertNotIn("192.168.63.240", STATE["stats"]["blocked_ips"])
+
+            ok_reapply, reapply_res, _ = reapply_tactical_decision(block_dec["id"])
+            self.assertTrue(ok_reapply)
+            self.assertEqual(reapply_res["decision"]["status"], "ACTIVE")
+            self.assertIn("192.168.63.240", STATE["stats"]["blocked_ips"])
+
+            # 4d. Đảo ngược ISOLATE_ENDPOINT -> chuyển Agent 002 sang UNISOLATED
+            ep_dec = next(d for d in STATE["tactical_decisions"] if d["action_type"] == "ISOLATE_ENDPOINT" and d["target"] == "002")
+            ok_rev_ep, _, _ = revert_tactical_decision(ep_dec["id"], reason="Mở cô lập mạng máy chủ Web")
+            self.assertTrue(ok_rev_ep)
+            self.assertTrue(mock_wazuh.called)
+            self.assertEqual(STATE["endpoint_containment"]["002"]["isolation_status"], "UNISOLATED (FILE QUARANTINED)")
+
+        # 5. Chat Room gọi Qwen AI Agent thật (mock call_ollama 2 bước: gọi tool + trả lời tổng hợp)
+        with patch("tools.firewall_tools.tool_block_firewall_ip", return_value="Firewall Blocked OK") as mock_ai_fw_block, \
+             patch("tools.firewall_tools.tool_unblock_firewall_ip", return_value="Firewall Unblocked OK") as mock_ai_fw_unblock, \
+             patch("core.contingency_room.call_ollama") as mock_room_llm:
+            mock_room_llm.side_effect = [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "tool_room_execute_decision",
+                                    "arguments": {
+                                        "action_type": "BLOCK_IP",
+                                        "target": "192.168.63.241",
+                                        "reason": "Qwen AI đề xuất chặn IP lateral trong ROOM-0002",
+                                        "case_id": net_id,
+                                    },
+                                }
+                            }
+                        ],
+                    }
+                },
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": f"Báo cáo tác chiến ROOM-0002: Đã phân tích Case {net_id} và thực thi BLOCK_IP 192.168.63.241 kèm nút đảo ngược.",
+                    }
+                },
+            ]
+            ok_msg, room_chat, _ = post_room_message("ROOM-0002", {
+                "sender": "SOC Commander",
+                "case_id": net_id,
+                "text": "Phân tích tình hình ROOM-0002 và chặn IP 192.168.63.241 giúp tôi.",
+            })
+            self.assertTrue(ok_msg)
+            self.assertEqual(mock_room_llm.call_count, 2)
+            self.assertTrue(mock_ai_fw_block.called)
+            self.assertFalse(room_chat["ai_thinking"])
+            self.assertTrue(any(m["role"] == "COMMANDER" for m in room_chat["messages"]))
+            self.assertTrue(
+                any(
+                    m["role"] == "AI_AGENT"
+                    and m["sender"].startswith("Qwen AI (")
+                    and "ROOM-0002" in m["text"]
+                    for m in room_chat["messages"]
+                )
+            )
+            ai_dec = next(
+                d for d in STATE["tactical_decisions"]
+                if d["action_type"] == "BLOCK_IP" and d["target"] == "192.168.63.241"
+            )
+            self.assertEqual(ai_dec["status"], "ACTIVE")
+
+            ok_rev_ai, rev_ai_res, _ = revert_tactical_decision(
+                ai_dec["id"],
+                reason="Hoàn tác quyết định BLOCK_IP do AI đề xuất",
+            )
+            self.assertTrue(ok_rev_ai)
+            self.assertTrue(mock_ai_fw_unblock.called)
+            self.assertEqual(rev_ai_res["decision"]["status"], "REVERTED")
+            self.assertGreaterEqual(room_chat["board"]["exceptions_reverted_count"], 3)
+
+        # 6. Cập nhật Room, gỡ Case & lưu/khôi phục bền vững qua soc_state.json
+        ok_upd, room_upd, _ = update_contingency_room("ROOM-0002", {"stage": "Post-Incident"})
+        self.assertTrue(ok_upd)
+        self.assertEqual(room_upd["stage"], "Post-Incident")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_state_file = os.path.join(tmpdir, "soc_state.json")
+            with patch.dict(os.environ, {"SOC_DISABLE_STATE_PERSISTENCE": "0"}):
+                self.assertTrue(save_persistent_state(state_file=temp_state_file))
+                STATE["contingency_rooms"] = []
+                STATE["tactical_decisions"] = []
+                STATE.pop("_rooms_initialized", None)
+                self.assertTrue(load_persistent_state(state_file=temp_state_file))
+                overview = get_contingency_rooms_overview()
+                self.assertEqual(len(overview["rooms"]), 2)
+                restored_r2 = next(r for r in overview["rooms"] if r["id"] == "ROOM-0002")
+                self.assertEqual(restored_r2["stage"], "Post-Incident")
+                self.assertGreaterEqual(restored_r2["board"]["case_count"], 2)
+
+        ok_det, room_det, _ = detach_case_from_room("ROOM-0002", net_id)
+        self.assertTrue(ok_det)
+        self.assertNotIn(net_id, room_det["case_ids"])
+
+        ok_del, _ = delete_contingency_room("ROOM-0002")
+        self.assertTrue(ok_del)
+        self.assertEqual(len(get_contingency_rooms_overview()["rooms"]), 1)
 
 
 if __name__ == "__main__":

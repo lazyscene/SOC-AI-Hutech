@@ -1,1218 +1,772 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI SOC Command Center - Threat Intel & pfSense REST API v2</title>
+    <title>MINI-SOC · AI Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/js/core/tailwind-config.js"></script>
+    <link rel="stylesheet" href="/static/css/iris-theme.css">
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen p-6 font-sans">
-    <div class="max-w-7xl mx-auto space-y-6">
-        <!-- Header -->
-        <div class="flex justify-between items-center border-b border-slate-800 pb-4">
-            <div>
-                <div class="flex items-center space-x-3">
-                    <h1 class="text-2xl font-bold text-cyan-400">🛡️ MINI SOC - AI AGENT COMMAND CENTER</h1>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800 animate-pulse">
-                        ● PFSENSE & TI ACTIVE
-                    </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-950 text-purple-400 border border-purple-800">
-                        ● MITRE ATT&CK MAPPED
-                    </span>
-                </div>
-                <p class="text-sm text-slate-400 mt-1">pfSense Firewall REST API v2 + Wazuh SIEM + Threat Intel (VirusTotal, AbuseIPDB, MISP IOC) + Qwen LLM Core</p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2 justify-end">
-                <button id="btn-toggle-cases" onclick="toggleCasePanel()" class="bg-cyan-900/60 hover:bg-cyan-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-cyan-700 text-cyan-200 shadow flex items-center space-x-1.5">
-                    <span>🗂️ Alerts & Case Management</span>
-                    <span id="btn-case-count" class="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 font-mono text-[10px] border border-cyan-700">0</span>
-                </button>
-                <button id="btn-toggle-assets" onclick="toggleAssetPanel()" class="bg-emerald-900/60 hover:bg-emerald-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-emerald-700 text-emerald-200 shadow flex items-center space-x-1.5">
-                    <span>🖥️ Asset Manager</span>
-                    <span id="btn-asset-count" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono text-[10px] border border-emerald-700">0</span>
-                </button>
-                <button id="btn-toggle-misp" onclick="toggleMispPanel()" class="bg-purple-900/60 hover:bg-purple-800 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-purple-700 text-purple-200 shadow flex items-center space-x-1">
-                    <span>📑 Quản Lý MISP IOC</span>
-                </button>
-                <button id="btn-clear" onclick="clearBlocklist()" class="bg-slate-800 hover:bg-slate-700 active:scale-95 transition px-3 py-2 rounded-lg font-semibold text-xs border border-slate-700 text-slate-300 shadow">
-                    🧹 Xóa Sạch SOC_BLOCKLIST
-                </button>
-                <button id="btn-sim" onclick="triggerSim()" class="bg-rose-600 hover:bg-rose-500 active:scale-95 transition px-4 py-2 rounded-lg font-semibold text-sm shadow flex items-center space-x-2">
-                    <span>⚡ Bắn Cảnh Báo Giả Lập (Test TI & Qwen)</span>
-                </button>
-            </div>
-        </div>
+<body class="h-screen w-full overflow-hidden antialiased text-sm selection:bg-blue-500/25">
+    <!-- Mobile Backdrop -->
+    <div id="mobile-sidebar-backdrop" onclick="toggleMobileSidebar(false)" class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm hidden lg:hidden"></div>
 
-        <!-- Sơ đồ mạng Topology -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
-            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Sơ Đồ Phân Vùng Mạng & Lớp Threat Intelligence (Active Topology)</h2>
-            <div class="grid grid-cols-5 gap-3 text-center items-center">
-                <div class="p-3 bg-slate-800/80 rounded-lg border border-rose-500/40">
-                    <div class="text-sm font-bold text-rose-400">🌐 WAN (Attacker)</div>
-                    <div class="text-[11px] text-slate-400 font-mono mt-1">192.168.63.0/24</div>
-                </div>
-                <div class="p-3 bg-slate-800/80 rounded-lg border border-cyan-500/50">
-                    <div class="text-sm font-bold text-cyan-300">🔥 pfSense Firewall</div>
-                    <div class="text-[11px] text-slate-400 font-mono mt-1">192.168.171.2 (REST API v2)</div>
-                </div>
-                <div class="p-3 bg-slate-800/80 rounded-lg border border-indigo-500/50">
-                    <div class="text-sm font-bold text-indigo-300">🔍 Threat Intel Layer</div>
-                    <div class="text-[11px] text-slate-400 font-mono mt-1">VT v3 + AbuseIPDB + MISP</div>
-                </div>
-                <div class="p-3 bg-slate-800/80 rounded-lg border border-emerald-500/50">
-                    <div class="text-sm font-bold text-emerald-400">🖥️ Victim LANs</div>
-                    <div class="text-[11px] text-slate-400 font-mono mt-1">.214.0/24 & .45.0/24</div>
-                </div>
-                <div class="p-3 bg-slate-800/80 rounded-lg border border-purple-500/50">
-                    <div class="text-sm font-bold text-purple-400">🧠 Qwen LLM Core</div>
-                    <div class="text-[11px] text-slate-400 font-mono mt-1">Host GPU (192.168.63.1)</div>
-                </div>
+    <div class="flex h-screen w-full overflow-hidden bg-background">
+        <!-- LEFT SIDEBAR (IRIS App Shell Style) -->
+        <aside id="app-sidebar" class="fixed inset-y-0 left-0 z-50 flex w-60 shrink-0 -translate-x-full flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 lg:static lg:translate-x-0">
+            <!-- Brand Header (h-14 matches Topbar) -->
+            <div class="sidebar-brand-wrap flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
+                <a href="#dashboard" onclick="switchView('dashboard'); return false;" class="flex items-center gap-2.5 min-w-0">
+                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-blue-600/20 dark:text-blue-400 dark:border dark:border-blue-500/30 shadow-sm">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v6c0 4.97-3.05 8.85-7 10-3.95-1.15-7-5.03-7-10V6l7-3z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.5 12l1.75 1.75L15 10" />
+                        </svg>
+                    </div>
+                    <div class="sidebar-brand-text min-w-0">
+                        <div class="font-bold tracking-wider text-xs text-foreground">MINI-SOC</div>
+                        <div class="text-[10px] font-mono text-muted-foreground">AI Command Center</div>
+                    </div>
+                </a>
+                <button onclick="toggleSidebarCollapse()" title="Thu gọn / Mở rộng Sidebar" class="hidden lg:inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-hover hover:text-foreground transition">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                </button>
             </div>
-        </div>
 
-        <!-- Bảng 4 chỉ số thống kê -->
-        <div class="grid grid-cols-4 gap-4">
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs font-semibold uppercase">TỔNG CẢNH BÁO SIEM ĐÃ ĐỌC</div>
-                <div id="st-total" class="text-3xl font-bold text-white mt-1 font-mono">0</div>
-            </div>
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs font-semibold uppercase">PHÁT HIỆN TẤN CÔNG (TRUE POSITIVE)</div>
-                <div id="st-tp" class="text-3xl font-bold text-rose-400 mt-1 font-mono">0</div>
-            </div>
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs font-semibold uppercase">ĐÃ LỌC CẢNH BÁO GIẢ (FALSE POSITIVE)</div>
-                <div id="st-fp" class="text-3xl font-bold text-emerald-400 mt-1 font-mono">0</div>
-            </div>
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <div class="text-slate-400 text-xs font-semibold uppercase">PHẢN ỨNG NGĂN CHẶN (PFSENSE & WAZUH AR)</div>
-                <div id="st-blocked" class="text-xs font-mono text-amber-400 mt-2 break-all max-h-12 overflow-y-auto">Chưa có</div>
-            </div>
-        </div>
-
-        <!-- MISP IOCs Manager Panel (Collapsible) -->
-        <div id="misp-panel" class="hidden bg-slate-900 border border-purple-800/60 rounded-xl p-4 space-y-4">
-            <div class="flex justify-between items-center border-b border-slate-800 pb-2">
-                <div class="flex items-center space-x-2">
-                    <span class="text-purple-400 font-bold text-sm">📑 KHO DỮ LIỆU MISP IOC CỤC BỘ (THREAT INTELLIGENCE REPOSITORY)</span>
-                    <span id="misp-count" class="text-xs font-mono text-slate-400">(0 IOCs)</span>
+            <!-- Commander Profile Block -->
+            <div class="sidebar-profile-wrap flex items-center gap-3 border-b border-sidebar-border px-4 py-3">
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 text-xs font-bold text-white shadow-sm">
+                    SC
                 </div>
-                <div class="flex items-center space-x-2">
-                    <button id="btn-sync-osint" onclick="syncMispFeeds()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow flex items-center space-x-1">
-                        <span>🔄 Cập Nhật Feed Từ OSINT</span>
+                <div class="sidebar-profile-meta min-w-0 flex-1">
+                    <div class="truncate text-xs font-semibold text-foreground">SOC Commander</div>
+                    <div id="sidebar-clock" class="truncate font-mono text-[11px] text-muted-foreground">--/--/---- · --:--:--</div>
+                </div>
+            </div>
+
+            <!-- Sidebar Navigation Groups -->
+            <nav class="flex-1 overflow-y-auto px-3 py-3 space-y-5" aria-label="Primary SOC Navigation">
+                <div>
+                    <div class="sidebar-section-title px-2.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                        Overview
+                    </div>
+                    <div class="space-y-1">
+                        <button id="nav-dashboard" data-view="dashboard" onclick="switchView('dashboard')" class="sidebar-nav-btn w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition">
+                            <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                                <rect x="3" y="3" width="7" height="9" rx="1.5" />
+                                <rect x="14" y="3" width="7" height="5" rx="1.5" />
+                                <rect x="14" y="12" width="7" height="9" rx="1.5" />
+                                <rect x="3" y="16" width="7" height="5" rx="1.5" />
+                            </svg>
+                            <span class="sidebar-label truncate">Dashboard</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="sidebar-section-title px-2.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                        Investigation
+                    </div>
+                    <div class="space-y-1">
+                        <button id="btn-toggle-cases" data-view="cases" onclick="switchView('cases')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
+                            <span class="flex items-center gap-2.5 min-w-0">
+                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.73 21a2 2 0 01-3.46 0" />
+                                </svg>
+                                <span class="sidebar-label truncate">Alerts &amp; Cases</span>
+                            </span>
+                            <span id="btn-case-count" class="sidebar-badge px-1.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/25">0</span>
+                        </button>
+
+                        <button id="btn-toggle-rooms" data-view="rooms" onclick="switchView('rooms')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
+                            <span class="flex items-center gap-2.5 min-w-0">
+                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01" />
+                                </svg>
+                                <span class="sidebar-label truncate">Contingency Rooms</span>
+                            </span>
+                            <span id="btn-room-count" class="sidebar-badge px-1.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/25">1</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="sidebar-section-title px-2.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                        Manage
+                    </div>
+                    <div class="space-y-1">
+                        <button id="btn-toggle-assets" data-view="assets" onclick="switchView('assets')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
+                            <span class="flex items-center gap-2.5 min-w-0">
+                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                                    <rect x="2" y="3" width="20" height="14" rx="2" />
+                                    <path stroke-linecap="round" d="M8 21h8M12 17v4" />
+                                </svg>
+                                <span class="sidebar-label truncate">Asset Manager</span>
+                            </span>
+                            <span id="btn-asset-count" class="sidebar-badge px-1.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25">0</span>
+                        </button>
+
+                        <button id="btn-toggle-misp" data-view="misp" onclick="switchView('misp')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
+                            <span class="flex items-center gap-2.5 min-w-0">
+                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                                    <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                                    <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+                                </svg>
+                                <span class="sidebar-label truncate">MISP IOC Vault</span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </nav>
+
+            <!-- Sidebar Footer -->
+            <div class="border-t border-sidebar-border px-4 py-3 text-[11px] text-muted-foreground">
+                <div class="flex items-center gap-2">
+                    <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                    <span class="sidebar-footer-text truncate font-medium text-foreground/80">pfSense + Wazuh + Qwen GPU</span>
+                </div>
+                <div class="sidebar-footer-text mt-1 font-mono text-[10px] text-muted-foreground/75">
+                    MINI-SOC v2.0 · MITRE ATT&amp;CK
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN WORKSPACE COLUMN -->
+        <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <!-- TOPBAR (h-14) -->
+            <header class="iris-topbar z-30 flex h-14 shrink-0 items-center justify-between gap-3 px-4 sm:px-5">
+                <div class="flex min-w-0 items-center gap-2.5">
+                    <button onclick="toggleMobileSidebar(true)" class="lg:hidden inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
                     </button>
-                    <button onclick="toggleMispPanel()" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Đóng</button>
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="hidden sm:inline text-xs font-mono text-muted-foreground">MINI-SOC</span>
+                        <span class="hidden sm:inline text-muted-foreground/50">/</span>
+                        <h1 id="topbar-view-title" class="truncate text-sm font-semibold text-foreground">Dashboard</h1>
+                        <span id="topbar-context-pill" class="hidden md:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                            ● pfSense &amp; TI Active
+                        </span>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Form thêm IOC mới -->
-            <form id="form-add-ioc" onsubmit="addMispIoc(event)" class="grid grid-cols-12 gap-2 text-xs bg-slate-950 p-3 rounded-lg border border-slate-800">
-                <div class="col-span-2">
-                    <label class="block text-slate-400 mb-1">Loại IOC</label>
-                    <select id="ioc-type" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
-                        <option value="ip-src">ip-src</option>
-                        <option value="sha256">sha256</option>
-                        <option value="md5">md5</option>
-                        <option value="domain">domain</option>
-                        <option value="url">url</option>
-                        <option value="cve">cve</option>
-                    </select>
-                </div>
-                <div class="col-span-3">
-                    <label class="block text-slate-400 mb-1">Giá trị Indicator</label>
-                    <input id="ioc-value" required type="text" placeholder="192.168.63.x hoặc hash..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white font-mono">
-                </div>
-                <div class="col-span-2">
-                    <label class="block text-slate-400 mb-1">Mức Độ (Threat)</label>
-                    <select id="ioc-threat" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
-                        <option value="Critical">Critical</option>
-                        <option value="High" selected>High</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Low">Low</option>
-                    </select>
-                </div>
-                <div class="col-span-4">
-                    <label class="block text-slate-400 mb-1">Mô tả / Ngữ cảnh</label>
-                    <input id="ioc-comment" type="text" placeholder="Ghi chú về nguồn tấn công..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
-                </div>
-                <div class="col-span-1 flex items-end">
-                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-1.5 rounded transition">
-                        + Thêm
+                <div class="flex items-center gap-2">
+                    <!-- Quick Search (Ctrl+/) -->
+                    <div class="relative hidden md:block w-56 lg:w-64">
+                        <svg class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <circle cx="11" cy="11" r="8" />
+                            <path stroke-linecap="round" d="m21 21-4.3-4.3" />
+                        </svg>
+                        <input id="global-search-input" oninput="onGlobalSearchInput()" onkeydown="onGlobalSearchKeydown(event)" type="text" placeholder="Search... (Ctrl + /)" class="iris-input w-full pl-8 pr-3 py-1.5 text-xs placeholder:text-muted-foreground/70">
+                    </div>
+
+                    <button id="btn-clear" onclick="clearBlocklist()" title="Xóa sạch SOC_BLOCKLIST trên pfSense" class="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/70 hover:bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground transition active:scale-95">
+                        <span>🧹 Xóa Blocklist</span>
                     </button>
-                </div>
-            </form>
 
-            <!-- Thanh tìm kiếm & lọc IOCs -->
-            <div class="flex items-center justify-between">
-                <div class="relative w-80">
-                    <input id="misp-search" oninput="onMispSearchInput()" type="text" placeholder="🔍 Tìm nhanh IP, Hash, Domain, CVE..." class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-1.5 text-xs text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-purple-500">
-                </div>
-                <div id="misp-info" class="text-xs text-slate-400">
-                    Hiển thị tối đa 100 IOCs mới nhất
-                </div>
-            </div>
-
-            <!-- Bảng danh sách IOC -->
-            <div class="max-h-56 overflow-y-auto border border-slate-800 rounded-lg">
-                <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
-                        <tr>
-                            <th class="p-2">ID</th>
-                            <th class="p-2">Loại</th>
-                            <th class="p-2">Giá Trị Indicator</th>
-                            <th class="p-2">Mức Độ</th>
-                            <th class="p-2">Nguồn (Source)</th>
-                            <th class="p-2">Mô Tả / Ngữ Cảnh</th>
-                            <th class="p-2">Ngày Cập Nhật</th>
-                        </tr>
-                    </thead>
-                    <tbody id="misp-table-body" class="divide-y divide-slate-800 font-mono"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Alerts & Case Management Panel (Collapsible) -->
-        <div id="case-panel" class="hidden bg-slate-900 border border-cyan-800/60 rounded-xl p-4 space-y-4">
-            <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-2 gap-2">
-                <div class="flex items-center space-x-2">
-                    <span class="text-cyan-400 font-bold text-sm">🗂️ QUẢN LÝ HỒ SƠ SỰ CỐ (ALERTS & CASE MANAGEMENT)</span>
-                    <span id="case-summary-count" class="text-xs font-mono text-slate-400">(0 Cases | 0 Incidents Cha)</span>
-                </div>
-                <div class="flex items-center space-x-2 text-xs">
-                    <select id="case-filter-domain" onchange="renderCasesFromCache(true)" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
-                        <option value="">Tất cả Miền (ALL)</option>
-                        <option value="NETWORK">Miền Mạng (NETWORK)</option>
-                        <option value="ENDPOINT">Miền Máy Trạm (ENDPOINT)</option>
-                    </select>
-                    <select id="case-filter-status" onchange="renderCasesFromCache(true)" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
-                        <option value="">Tất cả Trạng thái</option>
-                        <option value="OPEN">Đang mở (OPEN)</option>
-                        <option value="CLOSED">Đã đóng (CLOSED)</option>
-                    </select>
-                    <button onclick="toggleCasePanel()" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Đóng</button>
-                </div>
-            </div>
-
-            <!-- Parent Incidents (Liên kết Kill-Chain Mạng <-> Endpoint) -->
-            <div id="parent-incidents-section" class="hidden space-y-2">
-                <div class="text-xs font-bold text-rose-400 uppercase tracking-wider">🔗 Chuỗi Tấn Công Đa Miền (Parent Incidents / Related Cases)</div>
-                <div id="parent-incidents-list" class="space-y-2"></div>
-            </div>
-
-            <!-- Danh sách Cases -->
-            <div id="cases-list" class="space-y-2.5 max-h-[480px] overflow-y-auto pr-1 text-xs"></div>
-        </div>
-
-        <!-- Asset Manager Panel (Collapsible) -->
-        <div id="asset-panel" class="hidden bg-slate-900 border border-emerald-800/60 rounded-xl p-4 space-y-4">
-            <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-2 gap-2">
-                <div class="flex items-center space-x-2">
-                    <span class="text-emerald-400 font-bold text-sm">🖥️ QUẢN LÝ TÀI SẢN THIẾT BỊ VẬT LÝ & MÁY CHỦ (ASSET MANAGER)</span>
-                    <span id="asset-summary-count" class="text-xs font-mono text-slate-400">(0 Thiết bị)</span>
-                </div>
-                <div class="flex flex-wrap items-center gap-2 text-xs">
-                    <input id="asset-search" oninput="renderAssetsFromCache(true)" type="text" placeholder="🔍 Tìm tên, IP, nhãn, chủ sở hữu..." class="bg-slate-950 border border-slate-700 rounded px-2.5 py-1 text-slate-200 font-mono placeholder:text-slate-500 w-56 focus:outline-none focus:border-emerald-500">
-                    <select id="asset-filter-label" onchange="renderAssetsFromCache(true)" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200">
-                        <option value="">Tất cả nhãn (ALL)</option>
-                        <option value="linux">linux</option>
-                        <option value="windows">windows</option>
-                        <option value="server">server</option>
-                        <option value="máy trạm">máy trạm</option>
-                        <option value="firewall">firewall</option>
-                        <option value="router">router</option>
-                        <option value="siem">siem</option>
-                        <option value="endpoint">endpoint</option>
-                    </select>
-                    <button onclick="toggleAssetPanel()" class="text-xs text-slate-400 hover:text-white px-2 py-1">✕ Đóng</button>
-                </div>
-            </div>
-
-            <!-- Form thêm / sửa thiết bị -->
-            <form id="form-add-asset" onsubmit="saveAssetForm(event)" class="grid grid-cols-12 gap-2 text-xs bg-slate-950 p-3 rounded-lg border border-slate-800">
-                <input type="hidden" id="asset-edit-id" value="">
-                <div class="col-span-3">
-                    <label class="block text-slate-400 mb-1">Tên thiết bị *</label>
-                    <input id="asset-name" required type="text" placeholder="VD: Web App Server 01..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
-                </div>
-                <div class="col-span-2">
-                    <label class="block text-slate-400 mb-1">Địa chỉ IP chính</label>
-                    <input id="asset-ip" type="text" placeholder="192.168.214.10" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white font-mono">
-                </div>
-                <div class="col-span-1">
-                    <label class="block text-slate-400 mb-1">Agent ID</label>
-                    <input id="asset-agent-id" type="text" placeholder="002" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white font-mono">
-                </div>
-                <div class="col-span-3">
-                    <label class="block text-slate-400 mb-1">Loại theo nhãn (cách nhau dấu phẩy)</label>
-                    <input id="asset-labels" type="text" placeholder="linux, server, máy trạm, firewall..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
-                </div>
-                <div class="col-span-2">
-                    <label class="block text-slate-400 mb-1">Chủ sở hữu</label>
-                    <input id="asset-owner" type="text" placeholder="SOC Admin / IT Ops..." class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white">
-                </div>
-                <div class="col-span-1 flex items-end gap-1">
-                    <button id="btn-asset-submit" type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 rounded transition">
-                        + Lưu
+                    <button id="btn-sim" onclick="triggerSim()" class="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition active:scale-95">
+                        <span>⚡ Giả Lập Alert</span>
                     </button>
-                    <button id="btn-asset-cancel-edit" type="button" onclick="resetAssetForm()" class="hidden px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition" title="Hủy sửa">
-                        ✕
+
+                    <button id="btn-theme-toggle" onclick="toggleTheme()" title="Chuyển đổi Dark / Light Mode" class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-muted px-2.5 py-1.5 text-xs font-medium text-foreground transition">
+                        <span id="theme-toggle-icon">🌙</span>
+                        <span id="theme-toggle-label" class="hidden sm:inline">Dark</span>
                     </button>
                 </div>
-            </form>
+            </header>
 
-            <!-- Bảng danh sách thiết bị -->
-            <div class="max-h-72 overflow-y-auto border border-slate-800 rounded-lg">
-                <table class="w-full text-left text-xs">
-                    <thead class="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
-                        <tr>
-                            <th class="p-2.5">Mã & Tên Thiết Bị</th>
-                            <th class="p-2.5">IP / Wazuh Agent</th>
-                            <th class="p-2.5">Loại Theo Nhãn</th>
-                            <th class="p-2.5">Chủ Sở Hữu</th>
-                            <th class="p-2.5">Số Case Trên Thiết Bị</th>
-                            <th class="p-2.5 text-right">Thao Tác</th>
-                        </tr>
-                    </thead>
-                    <tbody id="asset-table-body" class="divide-y divide-slate-800"></tbody>
-                </table>
-            </div>
-        </div>
+            <!-- SCROLLABLE MAIN WORKSPACE -->
+            <main class="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-5 space-y-5">
 
-        <!-- 2 Khung chính: Stream CLI & Bảng Phán Quyết -->
-        <div class="grid grid-cols-2 gap-6">
-            <!-- Luồng suy luận -->
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col">
-                <h2 class="text-sm font-semibold text-cyan-400 uppercase mb-3 flex items-center justify-between">
-                    <span>Luồng Suy Luận, TI & Gọi Tool pfSense (Live Stream)</span>
-                    <span class="text-xs text-slate-500 font-mono">Realtime</span>
-                </h2>
-                <div id="stream-box" class="space-y-2 h-[450px] overflow-y-auto font-mono text-xs bg-black/60 p-3 rounded-lg border border-slate-800/80"></div>
-            </div>
+                <!-- ==================== VIEW 1: DASHBOARD ==================== -->
+                <section id="view-dashboard" class="workspace-view max-w-7xl mx-auto space-y-5">
+                    <!-- Overview Banner + SVG Activity Wave (inspired by iris-demo.webp) -->
+                    <div class="iris-panel overflow-hidden">
+                        <div class="flex flex-wrap items-center justify-between gap-3 px-5 pt-4 pb-2">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h2 class="text-base font-bold text-foreground">Trung Tâm Điều Hành An Ninh Mạng (SOC Operations)</h2>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25">MITRE ATT&amp;CK MAPPED</span>
+                                </div>
+                                <p class="text-xs text-muted-foreground mt-0.5">pfSense Firewall REST API v2 + Wazuh SIEM + Threat Intel (VirusTotal, AbuseIPDB, MISP Vault) + Qwen LLM GPU Core</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="switchView('cases')" class="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition">
+                                    🗂️ Mở Cases
+                                </button>
+                                <button onclick="switchView('rooms')" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-xs font-semibold transition">
+                                    🚨 Vào Contingency Room
+                                </button>
+                            </div>
+                        </div>
+                        <div id="dashboard-wave-wrap" class="px-2 pt-1 pb-0">
+                            <svg id="dashboard-wave-svg" viewBox="0 0 1000 72" preserveAspectRatio="none" class="w-full h-16 block">
+                                <defs>
+                                    <linearGradient id="irisWaveGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.45" />
+                                        <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.03" />
+                                    </linearGradient>
+                                </defs>
+                                <path id="dashboard-wave-area" d="M 0 68 L 0 42 C 120 55, 220 28, 340 48 C 460 66, 560 18, 690 42 C 820 62, 910 34, 1000 46 L 1000 68 Z" fill="url(#irisWaveGrad)" />
+                                <path id="dashboard-wave-line" d="M 0 42 C 120 55, 220 28, 340 48 C 460 66, 560 18, 690 42 C 820 62, 910 34, 1000 46" fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.85" />
+                            </svg>
+                        </div>
+                    </div>
 
-            <!-- Bảng phán quyết -->
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col">
-                <h2 class="text-sm font-semibold text-purple-400 uppercase mb-3 flex items-center justify-between">
-                    <span>Bảng Phán Quyết Sự Cố & MITRE ATT&CK Mapping</span>
-                    <span class="text-xs text-slate-500 font-mono">Incident Registry</span>
-                </h2>
-                <div id="decision-box" class="space-y-3 h-[450px] overflow-y-auto text-xs"></div>
-            </div>
+                    <!-- 4 Core KPI Tiles -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                        <div class="iris-panel p-4 flex flex-col justify-between">
+                            <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                <span>Tổng Cảnh Báo SIEM</span>
+                                <span class="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">📡</span>
+                            </div>
+                            <div id="st-total" class="text-3xl font-bold font-mono text-foreground mt-2">0</div>
+                            <div class="text-[11px] text-muted-foreground mt-1">Đã đọc &amp; phân loại tự động</div>
+                        </div>
+
+                        <div class="iris-panel p-4 flex flex-col justify-between">
+                            <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                <span>Tấn Công (True Positive)</span>
+                                <span class="h-7 w-7 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">🔥</span>
+                            </div>
+                            <div id="st-tp" class="text-3xl font-bold font-mono text-rose-600 dark:text-rose-400 mt-2">0</div>
+                            <div class="text-[11px] text-muted-foreground mt-1">Sự cố xác thực cần ứng phó</div>
+                        </div>
+
+                        <div class="iris-panel p-4 flex flex-col justify-between">
+                            <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                <span>Cảnh Báo Giả (Filtered)</span>
+                                <span class="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">✅</span>
+                            </div>
+                            <div id="st-fp" class="text-3xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-2">0</div>
+                            <div class="text-[11px] text-muted-foreground mt-1">Nhiễu vô hại đã được loại trừ</div>
+                        </div>
+
+                        <div class="iris-panel p-4 flex flex-col justify-between">
+                            <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                <span>Ngăn Chặn (pfSense &amp; AR)</span>
+                                <span class="h-7 w-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">🛡️</span>
+                            </div>
+                            <div id="st-blocked" class="text-xs font-mono text-amber-600 dark:text-amber-300 mt-2 break-all max-h-14 overflow-y-auto">Chưa có</div>
+                            <div class="text-[11px] text-muted-foreground mt-1">IP blocked / Endpoint isolated</div>
+                        </div>
+                    </div>
+
+                    <!-- Active Topology Strip -->
+                    <div class="iris-panel p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sơ Đồ Phân Vùng Mạng &amp; Lớp Threat Intelligence (Active Topology)</h3>
+                            <span class="text-[11px] font-mono text-muted-foreground">5-Stage Detection Mesh</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-center">
+                            <div class="iris-subcard p-3 border-l-4 border-l-rose-500">
+                                <div class="text-xs font-bold text-rose-600 dark:text-rose-400">🌐 WAN (Attacker)</div>
+                                <div class="text-[11px] font-mono text-muted-foreground mt-1">192.168.63.0/24</div>
+                            </div>
+                            <div class="iris-subcard p-3 border-l-4 border-l-cyan-500">
+                                <div class="text-xs font-bold text-cyan-600 dark:text-cyan-300">🔥 pfSense Firewall</div>
+                                <div class="text-[11px] font-mono text-muted-foreground mt-1">192.168.171.2 (REST API v2)</div>
+                            </div>
+                            <div class="iris-subcard p-3 border-l-4 border-l-indigo-500">
+                                <div class="text-xs font-bold text-indigo-600 dark:text-indigo-300">🔍 Threat Intel Layer</div>
+                                <div class="text-[11px] font-mono text-muted-foreground mt-1">VT v3 + AbuseIPDB + MISP</div>
+                            </div>
+                            <div class="iris-subcard p-3 border-l-4 border-l-emerald-500">
+                                <div class="text-xs font-bold text-emerald-600 dark:text-emerald-400">🖥️ Victim LANs</div>
+                                <div class="text-[11px] font-mono text-muted-foreground mt-1">.214.0/24 &amp; .45.0/24</div>
+                            </div>
+                            <div class="iris-subcard p-3 border-l-4 border-l-purple-500">
+                                <div class="text-xs font-bold text-purple-600 dark:text-purple-400">🧠 Qwen LLM Core</div>
+                                <div class="text-[11px] font-mono text-muted-foreground mt-1">Host GPU (192.168.63.1)</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2 Main Live Panes: Reasoning Stream & Verdicts -->
+                    <div id="live-ops-grid" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                        <div class="iris-panel p-4 flex flex-col">
+                            <div class="flex items-center justify-between border-b border-border pb-2.5 mb-3">
+                                <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">Luồng Suy Luận, TI &amp; Gọi Tool pfSense (Live Stream)</h3>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">Realtime</span>
+                            </div>
+                            <div id="stream-box" class="space-y-1.5 h-[430px] overflow-y-auto font-mono text-xs iris-subcard p-3"></div>
+                        </div>
+
+                        <div class="iris-panel p-4 flex flex-col">
+                            <div class="flex items-center justify-between border-b border-border pb-2.5 mb-3">
+                                <h3 class="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Bảng Phán Quyết Sự Cố &amp; MITRE ATT&amp;CK</h3>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-muted text-muted-foreground border border-border">Incident Registry</span>
+                            </div>
+                            <div id="decision-box" class="space-y-3 h-[430px] overflow-y-auto pr-1 text-xs"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==================== VIEW 2: CONTINGENCY ROOMS (WAR ROOM) ==================== -->
+                <section id="view-rooms" class="workspace-view hidden max-w-7xl mx-auto">
+                    <div id="contingency-room-panel" class="iris-panel overflow-hidden">
+                        <!-- War Room Top Header (inspired by WarRoomTopbar.svelte & image.png) -->
+                        <div class="iris-warroom-header border-b border-border px-5 py-3.5 space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div class="flex flex-wrap items-center gap-3 min-w-0">
+                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                                        </svg>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="font-mono text-xs text-muted-foreground">WR</span>
+                                            <h2 id="room-header-name" class="text-sm font-bold text-foreground truncate">Contingency War Room</h2>
+                                            <span id="room-board-title-badge" class="px-2 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">ROOM-0001</span>
+                                        </div>
+                                        <div id="room-board-subtitle" class="text-[11px] text-muted-foreground font-mono mt-0.5">
+                                            0 cases · updated --:--:-- · refreshes automatically
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-2 text-xs">
+                                    <label class="text-muted-foreground hidden sm:inline">Giai đoạn:</label>
+                                    <select id="room-stage-select" onchange="changeCurrentRoomStage(this.value)" class="iris-input px-2.5 py-1 text-xs">
+                                        <option value="Containment">Containment</option>
+                                        <option value="Investigation">Investigation</option>
+                                        <option value="Eradication">Eradication</option>
+                                        <option value="Post-Incident">Post-Incident</option>
+                                    </select>
+                                    <button onclick="toggleAssetsFlagView()" class="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition">
+                                        🏷️ Assets by flag
+                                    </button>
+                                    <button onclick="toggleCreateRoomForm()" class="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition">
+                                        + Tạo Room
+                                    </button>
+                                    <button id="btn-delete-room" onclick="deleteCurrentRoom()" class="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/30 text-xs font-medium transition">
+                                        🗑️ Xóa
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Room Switcher Pills -->
+                            <div id="room-tabs" class="flex flex-wrap items-center gap-1.5"></div>
+
+                            <!-- Collapsible Create Room Form -->
+                            <form id="form-create-room" onsubmit="submitCreateRoom(event)" class="hidden grid grid-cols-12 gap-2.5 text-xs iris-subcard p-3">
+                                <div class="col-span-12 md:col-span-5">
+                                    <label class="block text-muted-foreground mb-1">Tên phòng tác chiến *</label>
+                                    <input id="new-room-name" required type="text" placeholder="VD: Chiến dịch xử lý RCE Web Server..." class="iris-input w-full px-2.5 py-1.5">
+                                </div>
+                                <div class="col-span-6 md:col-span-3">
+                                    <label class="block text-muted-foreground mb-1">Giai đoạn (Stage)</label>
+                                    <select id="new-room-stage" class="iris-input w-full px-2.5 py-1.5">
+                                        <option value="Containment">Containment</option>
+                                        <option value="Investigation">Investigation</option>
+                                        <option value="Eradication">Eradication</option>
+                                        <option value="Post-Incident">Post-Incident</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-6 md:col-span-2">
+                                    <label class="block text-muted-foreground mb-1">Độ ưu tiên</label>
+                                    <select id="new-room-priority" class="iris-input w-full px-2.5 py-1.5">
+                                        <option value="CRITICAL">CRITICAL</option>
+                                        <option value="HIGH" selected>HIGH</option>
+                                        <option value="MEDIUM">MEDIUM</option>
+                                        <option value="LOW">LOW</option>
+                                    </select>
+                                </div>
+                                <div class="col-span-12 md:col-span-2 flex items-end gap-1.5">
+                                    <button type="submit" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-semibold py-1.5 rounded-lg transition">Tạo Phòng</button>
+                                    <button type="button" onclick="toggleCreateRoomForm(false)" class="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-muted-foreground">✕</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- War Room Underline Tabs (WarRoomTabs.svelte style) -->
+                        <nav class="flex items-center gap-1 overflow-x-auto border-b border-border bg-card px-4" aria-label="War room sub-views">
+                            <button id="room-subtab-all" onclick="setRoomSubTab('all')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
+                                ✨ Tất cả trong 1
+                                <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
+                            </button>
+                            <button id="room-subtab-board" onclick="setRoomSubTab('board')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
+                                📊 Board
+                                <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
+                            </button>
+                            <button id="room-subtab-stream" onclick="setRoomSubTab('stream')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
+                                💬 Stream &amp; AI Chat
+                                <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
+                            </button>
+                            <button id="room-subtab-decisions" onclick="setRoomSubTab('decisions')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
+                                ⚖️ Decisions
+                                <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
+                            </button>
+                            <button id="room-subtab-cases" onclick="setRoomSubTab('cases')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
+                                🗂️ Cases &amp; Drag-Drop
+                                <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
+                            </button>
+                        </nav>
+
+                        <!-- War Room Body -->
+                        <div class="p-4 sm:p-5 space-y-5">
+                            <!-- Optional Assets by Flag Bar -->
+                            <div id="room-assets-flag-bar" class="hidden flex flex-wrap gap-2 p-3 iris-subcard text-xs"></div>
+
+                            <!-- Sub-section 1: Board KPIs (2x4 grid) -->
+                            <div id="room-sec-board" class="space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground">📊 Board Tổng Quan Tác Chiến</h3>
+                                </div>
+                                <div id="room-board-kpis" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+                            </div>
+
+                            <!-- Sub-section 2: Drag & Drop Cases into Board -->
+                            <div id="room-sec-cases" class="grid grid-cols-12 gap-4">
+                                <div class="col-span-12 lg:col-span-4 iris-subcard p-3.5 space-y-2.5">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-xs font-bold text-cyan-600 dark:text-cyan-300 uppercase">📥 Kéo Case vào Room</span>
+                                        <span id="room-available-count" class="text-[11px] font-mono text-muted-foreground">0 khả dụng</span>
+                                    </div>
+                                    <div id="room-available-cases" class="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs"></div>
+                                </div>
+
+                                <div id="room-cases-dropzone"
+                                     ondragover="onRoomDragOver(event)"
+                                     ondragleave="onRoomDragLeave(event)"
+                                     ondrop="onDropCaseToRoom(event)"
+                                     class="col-span-12 lg:col-span-8 iris-subcard border-2 border-dashed p-3.5 space-y-2.5 transition-colors">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-xs font-bold text-amber-600 dark:text-amber-300 uppercase">🗂️ Cases đang xử lý trong Board (Thả Case vào đây)</span>
+                                        <span id="room-cases-count" class="text-[11px] font-mono text-muted-foreground">0 Cases</span>
+                                    </div>
+                                    <div id="room-board-cases-list" class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1"></div>
+                                </div>
+                            </div>
+
+                            <!-- Sub-section 3 & 4: Stream Chat + Reversible Decisions -->
+                            <div id="room-exec-grid" class="grid grid-cols-12 gap-5">
+                                <!-- Stream & AI Chat (inspired by image.png) -->
+                                <div id="room-sec-stream" class="col-span-12 xl:col-span-6 iris-subcard overflow-hidden flex flex-col">
+                                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card/60 px-3.5 py-2.5">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase">💬 Stream &amp; AI War Room</span>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <label class="inline-flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer select-none">
+                                                <input id="room-chat-ask-ai" type="checkbox" checked class="rounded border-input text-indigo-600 focus:ring-indigo-500">
+                                                <span>🤖 Chat với Qwen AI (GPU)</span>
+                                            </label>
+                                            <button id="btn-ask-ai-room" onclick="askAiInRoom()" class="px-2.5 py-1 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-wait">
+                                                🤖 AI Tóm Tắt Tác Chiến
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex flex-1 min-h-0 flex-col md:flex-row">
+                                        <!-- Left Filter Rail (like image.png) -->
+                                        <div class="w-full md:w-44 shrink-0 border-b md:border-b-0 md:border-r border-border bg-muted/20 p-3 space-y-4 text-xs">
+                                            <div class="flex items-center justify-between">
+                                                <span class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Filters</span>
+                                                <button type="button" onclick="clearRoomStreamFilters()" class="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">Clear all</button>
+                                            </div>
+                                            <div class="space-y-1.5">
+                                                <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"># Topics</div>
+                                                <div class="flex items-center justify-between rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1.5 text-indigo-700 dark:text-indigo-300 font-medium">
+                                                    <span># Main</span>
+                                                    <span class="px-1 py-0.2 rounded text-[9px] font-mono bg-card border border-border">LIVE</span>
+                                                </div>
+                                            </div>
+                                            <div class="space-y-1.5">
+                                                <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Stream Lanes</div>
+                                                <label class="flex items-center justify-between cursor-pointer text-[11px] text-foreground py-0.5">
+                                                    <span>Commander</span>
+                                                    <input id="lane-COMMANDER" type="checkbox" checked onchange="toggleRoomStreamLane('COMMANDER')" class="rounded text-indigo-600">
+                                                </label>
+                                                <label class="flex items-center justify-between cursor-pointer text-[11px] text-foreground py-0.5">
+                                                    <span>Qwen AI Agent</span>
+                                                    <input id="lane-AI_AGENT" type="checkbox" checked onchange="toggleRoomStreamLane('AI_AGENT')" class="rounded text-indigo-600">
+                                                </label>
+                                                <label class="flex items-center justify-between cursor-pointer text-[11px] text-foreground py-0.5">
+                                                    <span>System Events</span>
+                                                    <input id="lane-SYSTEM" type="checkbox" checked onchange="toggleRoomStreamLane('SYSTEM')" class="rounded text-indigo-600">
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <!-- Right Chat Stream Column -->
+                                        <div class="flex-1 flex flex-col min-w-0 p-3 space-y-2.5 bg-card/30">
+                                            <input id="room-stream-search" oninput="onRoomStreamSearch()" type="text" placeholder="Filter the stream — messages, /decision, case activity..." class="iris-input w-full px-3 py-1.5 text-xs">
+                                            <div id="room-chat-messages" class="space-y-2 h-80 overflow-y-auto pr-1 text-xs"></div>
+
+                                            <!-- Composer Box -->
+                                            <form onsubmit="submitRoomMessage(event)" class="iris-panel p-2 space-y-2">
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    <select id="room-chat-case" class="iris-input px-2 py-1 text-[11px] font-mono max-w-[140px]">
+                                                        <option value="">Chung Room</option>
+                                                    </select>
+                                                    <input id="room-chat-input" type="text" required placeholder="Hỏi Qwen AI tác chiến hoặc ra lệnh điều tra / block / revert..." class="flex-1 min-w-[160px] bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none">
+                                                    <button type="submit" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shrink-0">
+                                                        Send
+                                                    </button>
+                                                </div>
+                                                <div class="flex items-center justify-between px-1 text-[10px] text-muted-foreground font-mono">
+                                                    <span>Enter to send · AI GPU suy luận theo ngữ cảnh Board</span>
+                                                    <span>qwen3.5:4b</span>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Reversible Decisions -->
+                                <div id="room-sec-decisions" class="col-span-12 xl:col-span-6 iris-subcard p-3.5 flex flex-col space-y-3">
+                                    <div class="flex justify-between items-center border-b border-border pb-2">
+                                        <span class="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase">⚖️ Decisions (Quyết Định Tác Chiến Có Nút Đảo Ngược)</span>
+                                        <span id="room-decisions-summary" class="text-[11px] font-mono text-muted-foreground">0 Active | 0 Reverted</span>
+                                    </div>
+
+                                    <!-- Create Decision Form -->
+                                    <form onsubmit="submitNewDecision(event)" class="grid grid-cols-12 gap-2 text-xs iris-panel p-3">
+                                        <div class="col-span-12 sm:col-span-3">
+                                            <label class="block text-[10px] text-muted-foreground mb-1">Case</label>
+                                            <select id="dec-case-id" onchange="prefillDecisionTarget()" class="iris-input w-full px-2 py-1 text-xs font-mono">
+                                                <option value="">Chung Room</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-span-12 sm:col-span-4">
+                                            <label class="block text-[10px] text-muted-foreground mb-1">Loại Quyết Định</label>
+                                            <select id="dec-action-type" onchange="prefillDecisionTarget()" class="iris-input w-full px-2 py-1 text-xs">
+                                                <option value="BLOCK_IP">🔥 Chặn IP (pfSense)</option>
+                                                <option value="ISOLATE_ENDPOINT">🔒 Cô lập Endpoint (Wazuh)</option>
+                                                <option value="RELEASE_ENDPOINT">🔓 Mở cô lập Endpoint</option>
+                                                <option value="FLAG_ASSET">🚩 Đánh dấu Compromised</option>
+                                                <option value="CLOSE_CASE">📁 Đóng hồ sơ Case</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-span-12 sm:col-span-5">
+                                            <label class="block text-[10px] text-muted-foreground mb-1">Mục tiêu (IP / Agent / ASSET / CASE) *</label>
+                                            <input id="dec-target" required type="text" placeholder="192.168.63.140 / 002 / ASSET-0003..." class="iris-input w-full px-2 py-1 text-xs font-mono">
+                                        </div>
+                                        <div class="col-span-8 sm:col-span-9">
+                                            <input id="dec-reason" type="text" placeholder="Lý do ra quyết định tác chiến..." class="iris-input w-full px-2.5 py-1.5 text-xs">
+                                        </div>
+                                        <div class="col-span-4 sm:col-span-3">
+                                            <button type="submit" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-1.5 rounded-lg transition">⚖️ Thực Thi</button>
+                                        </div>
+                                    </form>
+
+                                    <div id="room-decisions-list" class="space-y-2 h-[335px] overflow-y-auto pr-1 text-xs"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==================== VIEW 3: ALERTS & CASE MANAGEMENT ==================== -->
+                <section id="view-cases" class="workspace-view hidden max-w-7xl mx-auto">
+                    <div id="case-panel" class="iris-panel p-5 space-y-4">
+                        <div class="flex flex-wrap justify-between items-center border-b border-border pb-3 gap-3">
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-cyan-600 dark:text-cyan-400 font-bold text-sm">🗂️ QUẢN LÝ HỒ SƠ SỰ CỐ (ALERTS &amp; CASE MANAGEMENT)</span>
+                                <span id="case-summary-count" class="text-xs font-mono text-muted-foreground">(0 Cases | 0 Incidents Cha)</span>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 text-xs">
+                                <input id="case-search" oninput="renderCasesFromCache(true)" type="text" placeholder="🔍 Tìm mã Case, IP, Agent..." class="iris-input px-2.5 py-1.5 w-48 font-mono text-xs">
+                                <select id="case-filter-domain" onchange="renderCasesFromCache(true)" class="iris-input px-2.5 py-1.5 text-xs">
+                                    <option value="">Tất cả Miền (ALL)</option>
+                                    <option value="NETWORK">Miền Mạng (NETWORK)</option>
+                                    <option value="ENDPOINT">Miền Máy Trạm (ENDPOINT)</option>
+                                </select>
+                                <select id="case-filter-status" onchange="renderCasesFromCache(true)" class="iris-input px-2.5 py-1.5 text-xs">
+                                    <option value="">Tất cả Trạng thái</option>
+                                    <option value="OPEN">Đang mở (OPEN)</option>
+                                    <option value="CLOSED">Đã đóng (CLOSED)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Parent Incidents (Kill-Chain Correlation) -->
+                        <div id="parent-incidents-section" class="hidden space-y-2">
+                            <div class="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">🔗 Chuỗi Tấn Công Đa Miền (Parent Incidents / Related Cases)</div>
+                            <div id="parent-incidents-list" class="space-y-2"></div>
+                        </div>
+
+                        <!-- Cases Cards -->
+                        <div id="cases-list" class="space-y-3 text-xs"></div>
+                    </div>
+                </section>
+
+                <!-- ==================== VIEW 4: ASSET MANAGER ==================== -->
+                <section id="view-assets" class="workspace-view hidden max-w-7xl mx-auto">
+                    <div id="asset-panel" class="iris-panel p-5 space-y-4">
+                        <div class="flex flex-wrap justify-between items-center border-b border-border pb-3 gap-3">
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-emerald-600 dark:text-emerald-400 font-bold text-sm">🖥️ QUẢN LÝ TÀI SẢN THIẾT BỊ VẬT LÝ &amp; MÁY CHỦ (ASSET MANAGER)</span>
+                                <span id="asset-summary-count" class="text-xs font-mono text-muted-foreground">(0 Thiết bị)</span>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 text-xs">
+                                <input id="asset-search" oninput="renderAssetsFromCache(true)" type="text" placeholder="🔍 Tìm tên, IP, nhãn, chủ sở hữu..." class="iris-input px-2.5 py-1.5 font-mono w-56">
+                                <select id="asset-filter-label" onchange="renderAssetsFromCache(true)" class="iris-input px-2.5 py-1.5">
+                                    <option value="">Tất cả nhãn (ALL)</option>
+                                    <option value="linux">linux</option>
+                                    <option value="windows">windows</option>
+                                    <option value="server">server</option>
+                                    <option value="máy trạm">máy trạm</option>
+                                    <option value="firewall">firewall</option>
+                                    <option value="router">router</option>
+                                    <option value="siem">siem</option>
+                                    <option value="endpoint">endpoint</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Add / Edit Asset Form -->
+                        <form id="form-add-asset" onsubmit="saveAssetForm(event)" class="grid grid-cols-12 gap-2.5 text-xs iris-subcard p-3.5">
+                            <input type="hidden" id="asset-edit-id" value="">
+                            <div class="col-span-12 md:col-span-3">
+                                <label class="block text-muted-foreground mb-1">Tên thiết bị *</label>
+                                <input id="asset-name" required type="text" placeholder="VD: Web App Server 01..." class="iris-input w-full px-2.5 py-1.5">
+                            </div>
+                            <div class="col-span-6 md:col-span-2">
+                                <label class="block text-muted-foreground mb-1">Địa chỉ IP chính</label>
+                                <input id="asset-ip" type="text" placeholder="192.168.214.10" class="iris-input w-full px-2.5 py-1.5 font-mono">
+                            </div>
+                            <div class="col-span-6 md:col-span-1">
+                                <label class="block text-muted-foreground mb-1">Agent ID</label>
+                                <input id="asset-agent-id" type="text" placeholder="002" class="iris-input w-full px-2.5 py-1.5 font-mono">
+                            </div>
+                            <div class="col-span-12 md:col-span-3">
+                                <label class="block text-muted-foreground mb-1">Loại theo nhãn (cách nhau dấu phẩy)</label>
+                                <input id="asset-labels" type="text" placeholder="linux, server, máy trạm, firewall..." class="iris-input w-full px-2.5 py-1.5">
+                            </div>
+                            <div class="col-span-8 md:col-span-2">
+                                <label class="block text-muted-foreground mb-1">Chủ sở hữu</label>
+                                <input id="asset-owner" type="text" placeholder="SOC Admin / IT Ops..." class="iris-input w-full px-2.5 py-1.5">
+                            </div>
+                            <div class="col-span-4 md:col-span-1 flex items-end gap-1">
+                                <button id="btn-asset-submit" type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-1.5 rounded-lg transition">
+                                    + Lưu
+                                </button>
+                                <button id="btn-asset-cancel-edit" type="button" onclick="resetAssetForm()" class="hidden px-2 py-1.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition" title="Hủy sửa">
+                                    ✕
+                                </button>
+                            </div>
+                        </form>
+
+                        <!-- Assets Table -->
+                        <div class="max-h-[540px] overflow-auto border border-border rounded-xl">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-muted/70 text-muted-foreground sticky top-0 border-b border-border">
+                                    <tr>
+                                        <th class="p-3 font-semibold">Mã &amp; Tên Thiết Bị</th>
+                                        <th class="p-3 font-semibold">IP / Wazuh Agent</th>
+                                        <th class="p-3 font-semibold">Loại Theo Nhãn</th>
+                                        <th class="p-3 font-semibold">Chủ Sở Hữu</th>
+                                        <th class="p-3 font-semibold">Số Case Trên Thiết Bị</th>
+                                        <th class="p-3 text-right font-semibold">Thao Tác</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="asset-table-body" class="divide-y divide-border"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==================== VIEW 5: MISP IOC VAULT ==================== -->
+                <section id="view-misp" class="workspace-view hidden max-w-7xl mx-auto">
+                    <div id="misp-panel" class="iris-panel p-5 space-y-4">
+                        <div class="flex flex-wrap justify-between items-center border-b border-border pb-3 gap-3">
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-purple-600 dark:text-purple-400 font-bold text-sm">📑 KHO DỮ LIỆU MISP IOC CỤC BỘ (THREAT INTELLIGENCE REPOSITORY)</span>
+                                <span id="misp-count" class="text-xs font-mono text-muted-foreground">(0 IOCs)</span>
+                            </div>
+                            <button id="btn-sync-osint" onclick="syncMispFeeds()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm flex items-center gap-1.5">
+                                <span>🔄 Cập Nhật Feed Từ OSINT</span>
+                            </button>
+                        </div>
+
+                        <!-- Add IOC Form -->
+                        <form id="form-add-ioc" onsubmit="addMispIoc(event)" class="grid grid-cols-12 gap-2.5 text-xs iris-subcard p-3.5">
+                            <div class="col-span-6 md:col-span-2">
+                                <label class="block text-muted-foreground mb-1">Loại IOC</label>
+                                <select id="ioc-type" class="iris-input w-full px-2.5 py-1.5">
+                                    <option value="ip-src">ip-src</option>
+                                    <option value="sha256">sha256</option>
+                                    <option value="md5">md5</option>
+                                    <option value="domain">domain</option>
+                                    <option value="url">url</option>
+                                    <option value="cve">cve</option>
+                                </select>
+                            </div>
+                            <div class="col-span-6 md:col-span-3">
+                                <label class="block text-muted-foreground mb-1">Giá trị Indicator</label>
+                                <input id="ioc-value" required type="text" placeholder="192.168.63.x hoặc hash..." class="iris-input w-full px-2.5 py-1.5 font-mono">
+                            </div>
+                            <div class="col-span-6 md:col-span-2">
+                                <label class="block text-muted-foreground mb-1">Mức Độ (Threat)</label>
+                                <select id="ioc-threat" class="iris-input w-full px-2.5 py-1.5">
+                                    <option value="Critical">Critical</option>
+                                    <option value="High" selected>High</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="Low">Low</option>
+                                </select>
+                            </div>
+                            <div class="col-span-6 md:col-span-4">
+                                <label class="block text-muted-foreground mb-1">Mô tả / Ngữ cảnh</label>
+                                <input id="ioc-comment" type="text" placeholder="Ghi chú về nguồn tấn công..." class="iris-input w-full px-2.5 py-1.5">
+                            </div>
+                            <div class="col-span-12 md:col-span-1 flex items-end">
+                                <button type="submit" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-1.5 rounded-lg transition">
+                                    + Thêm
+                                </button>
+                            </div>
+                        </form>
+
+                        <!-- Search bar -->
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="relative w-full sm:w-80">
+                                <input id="misp-search" oninput="onMispSearchInput()" type="text" placeholder="🔍 Tìm nhanh IP, Hash, Domain, CVE..." class="iris-input w-full px-3 py-1.5 text-xs font-mono">
+                            </div>
+                            <div id="misp-info" class="text-xs text-muted-foreground">
+                                Hiển thị tối đa 100 IOCs mới nhất
+                            </div>
+                        </div>
+
+                        <!-- IOC Table -->
+                        <div class="max-h-[520px] overflow-auto border border-border rounded-xl">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-muted/70 text-muted-foreground sticky top-0 border-b border-border">
+                                    <tr>
+                                        <th class="p-2.5 font-semibold">ID</th>
+                                        <th class="p-2.5 font-semibold">Loại</th>
+                                        <th class="p-2.5 font-semibold">Giá Trị Indicator</th>
+                                        <th class="p-2.5 font-semibold">Mức Độ</th>
+                                        <th class="p-2.5 font-semibold">Nguồn (Source)</th>
+                                        <th class="p-2.5 font-semibold">Mô Tả / Ngữ Cảnh</th>
+                                        <th class="p-2.5 font-semibold">Ngày Cập Nhật</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="misp-table-body" class="divide-y divide-border font-mono"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </main>
         </div>
     </div>
 
-    <script>
-        function escapeHtml(text) {
-            if (!text) return '';
-            const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
-            return text.toString().replace(/[&<>"']/g, m => map[m]);
-        }
-
-        function toggleMispPanel() {
-            const panel = document.getElementById('misp-panel');
-            panel.classList.toggle('hidden');
-            if (!panel.classList.contains('hidden')) {
-                loadMispIocs();
-            }
-        }
-
-        let cachedCasesData = { cases: [], parent_incidents: [] };
-        const expandedCaseIds = new Set();
-        const openGraphCaseIds = new Set();
-        let lastCasesRenderSignature = '';
-
-        function toggleCasePanel() {
-            const panel = document.getElementById('case-panel');
-            panel.classList.toggle('hidden');
-            if (!panel.classList.contains('hidden')) {
-                renderCasesFromCache(true);
-            }
-        }
-
-        function toggleCaseDetails(caseId) {
-            if (expandedCaseIds.has(caseId)) {
-                expandedCaseIds.delete(caseId);
-            } else {
-                expandedCaseIds.add(caseId);
-            }
-            renderCasesFromCache(true);
-        }
-
-        function toggleSavedGraph(caseId) {
-            if (openGraphCaseIds.has(caseId)) {
-                openGraphCaseIds.delete(caseId);
-            } else {
-                openGraphCaseIds.add(caseId);
-            }
-            renderCasesFromCache(true);
-        }
-
-        async function generateCaseGraph(caseId) {
-            try {
-                const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/graph`, { method: 'POST' });
-                const data = await res.json();
-                if (!data.success || !data.graph) {
-                    alert('❌ ' + (data.message || 'Không thể dựng sơ đồ tấn công'));
-                    return;
-                }
-                const target = (cachedCasesData.cases || []).find(item => item.id === caseId);
-                if (target) {
-                    target.attack_graph = data.graph;
-                }
-                openGraphCaseIds.add(caseId);
-                renderCasesFromCache(true);
-            } catch (e) {
-                alert('❌ Lỗi kết nối khi dựng Sơ đồ: ' + e);
-            }
-        }
-
-        function renderAttackGraphSvg(graph) {
-            const nodes = graph.nodes || [];
-            const edges = graph.edges || [];
-            if (nodes.length === 0) {
-                return '<div class="text-xs text-slate-500 p-3">Chưa đủ thực thể để dựng sơ đồ.</div>';
-            }
-
-            const presentCols = [...new Set(nodes.map(n => Number(n.col || 0)))].sort((a, b) => a - b);
-            const colToIdx = {};
-            presentCols.forEach((col, i) => { colToIdx[col] = i; });
-
-            const nodesByCol = {};
-            presentCols.forEach(col => { nodesByCol[col] = []; });
-            nodes.forEach(n => { nodesByCol[Number(n.col || 0)].push(n); });
-
-            const maxRows = Math.max(1, ...presentCols.map(c => nodesByCol[c].length));
-            const nodeW = 176;
-            const nodeH = 54;
-            const colGap = 68;
-            const rowGap = 24;
-            const padX = 18;
-            const padY = 24;
-
-            const svgW = Math.max(760, padX * 2 + presentCols.length * nodeW + Math.max(0, presentCols.length - 1) * colGap);
-            const svgH = Math.max(200, padY * 2 + maxRows * nodeH + Math.max(0, maxRows - 1) * rowGap);
-
-            const pos = {};
-            presentCols.forEach(col => {
-                const colNodes = nodesByCol[col];
-                const colIdx = colToIdx[col];
-                const x = padX + colIdx * (nodeW + colGap);
-                const totalColH = colNodes.length * nodeH + Math.max(0, colNodes.length - 1) * rowGap;
-                const startY = (svgH - totalColH) / 2;
-                colNodes.forEach((n, rIdx) => {
-                    const y = startY + rIdx * (nodeH + rowGap);
-                    pos[n.id] = { x, y, cx: x + nodeW / 2, cy: y + nodeH / 2 };
-                });
-            });
-
-            const styleByType = {
-                attacker: { stroke: '#f43f5e', fill: '#4c0519', tag: '#fda4af', badge: 'ATTACKER' },
-                trigger: { stroke: '#a855f7', fill: '#3b0764', tag: '#d8b4fe', badge: 'TRIGGER' },
-                vector: { stroke: '#8b5cf6', fill: '#2e1065', tag: '#c4b5fd', badge: 'TECHNIQUE' },
-                target: { stroke: '#f59e0b', fill: '#451a03', tag: '#fcd34d', badge: 'TARGET' },
-                related_case: { stroke: '#ec4899', fill: '#500724', tag: '#f9a8d4', badge: 'LINKED' },
-                artifact_file: { stroke: '#06b6d4', fill: '#083344', tag: '#67e8f9', badge: 'FILE' },
-                artifact_hash: { stroke: '#0ea5e9', fill: '#0c4a6e', tag: '#7dd3fc', badge: 'HASH / TI' },
-                artifact_proc: { stroke: '#22d3ee', fill: '#164e63', tag: '#a5f3fc', badge: 'PROCESS' },
-                soar_action: { stroke: '#10b981', fill: '#022c22', tag: '#6ee7b7', badge: 'SOAR DEFENSE' },
-            };
-
-            const markerId = `arrow-${escapeHtml(graph.case_id || 'case')}`.replace(/[^a-zA-Z0-9_-]/g, '');
-
-            const edgesSvg = edges.map(e => {
-                const s = pos[e.source];
-                const t = pos[e.target];
-                if (!s || !t) return '';
-                const x1 = s.x + nodeW;
-                const y1 = s.cy;
-                const x2 = t.x;
-                const y2 = t.cy;
-                const dx = Math.max(30, Math.abs(x2 - x1) * 0.45);
-                const d = (x2 >= x1)
-                    ? `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2 - 4} ${y2}`
-                    : `M ${s.cx} ${s.y} Q ${(s.cx + t.cx) / 2} ${Math.min(s.y, t.y) - 36}, ${t.cx} ${t.y}`;
-                const mx = (x1 + x2) / 2;
-                const my = (y1 + y2) / 2 - 6;
-                const lbl = escapeHtml(e.label || '');
-                const lblSvg = lbl ? `
-                    <rect x="${mx - Math.min(54, lbl.length * 3.2 + 6)}" y="${my - 9}" width="${Math.min(108, lbl.length * 6.4 + 12)}" height="14" rx="4" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
-                    <text x="${mx}" y="${my + 1}" text-anchor="middle" fill="#cbd5e1" font-size="9" font-family="monospace">${lbl}</text>
-                ` : '';
-                return `<path d="${d}" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#${markerId})" opacity="0.9"/>${lblSvg}`;
-            }).join('');
-
-            const nodesSvg = nodes.map(n => {
-                const p = pos[n.id];
-                if (!p) return '';
-                const st = styleByType[n.type] || { stroke: '#64748b', fill: '#1e293b', tag: '#cbd5e1', badge: 'ENTITY' };
-                const titleTxt = (n.label || '').length > 23 ? (n.label.slice(0, 22) + '…') : (n.label || '');
-                const subTxt = (n.sublabel || '').length > 26 ? (n.sublabel.slice(0, 25) + '…') : (n.sublabel || '');
-                return `
-                    <g transform="translate(${p.x}, ${p.y})">
-                        <rect width="${nodeW}" height="${nodeH}" rx="8" fill="${st.fill}" stroke="${st.stroke}" stroke-width="1.5"/>
-                        <text x="10" y="15" fill="${st.tag}" font-size="8.5" font-weight="bold" font-family="monospace">${escapeHtml(st.badge)}</text>
-                        <text x="10" y="31" fill="#f8fafc" font-size="11" font-weight="bold" font-family="sans-serif">${escapeHtml(titleTxt)}</text>
-                        <text x="10" y="45" fill="#94a3b8" font-size="9.5" font-family="monospace">${escapeHtml(subTxt)}</text>
-                    </g>
-                `;
-            }).join('');
-
-            return `
-                <div class="overflow-x-auto bg-black/70 border border-slate-800 rounded-lg p-2">
-                    <svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" class="mx-auto block">
-                        <defs>
-                            <marker id="${markerId}" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-                                <polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/>
-                            </marker>
-                        </defs>
-                        ${edgesSvg}
-                        ${nodesSvg}
-                    </svg>
-                </div>
-            `;
-        }
-
-        async function changeCaseStatus(caseId, newStatus) {
-            try {
-                const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/status`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: newStatus, reason: newStatus === 'CLOSED' ? 'Đóng từ Web UI SOC' : 'Mở lại từ Web UI SOC' })
-                });
-                const data = await res.json();
-                if (!data.success) alert('❌ ' + (data.message || 'Lỗi cập nhật trạng thái Case'));
-                await refresh();
-            } catch (e) {
-                alert('❌ Lỗi kết nối: ' + e);
-            }
-        }
-
-        async function replayCase(caseId) {
-            try {
-                const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/replay`, { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    alert(`🔄 ${data.message}`);
-                } else {
-                    alert(`❌ ${data.message}`);
-                }
-                await refresh();
-            } catch (e) {
-                alert('❌ Lỗi Replay Case: ' + e);
-            }
-        }
-
-        function renderCasesFromCache(force = false) {
-            const cases = cachedCasesData.cases || [];
-            const parentIncidents = cachedCasesData.parent_incidents || [];
-            const domainFilter = (document.getElementById('case-filter-domain')?.value || '').toUpperCase();
-            const statusFilter = (document.getElementById('case-filter-status')?.value || '').toUpperCase();
-
-            const signature = JSON.stringify({
-                df: domainFilter,
-                sf: statusFilter,
-                exp: [...expandedCaseIds].sort(),
-                grp: [...openGraphCaseIds].sort(),
-                pis: parentIncidents.map(p => `${p.id}:${p.updated_at}:${p.severity}:${(p.combined_timeline || []).length}`),
-                cs: cases.map(c => `${c.id}:${c.status}:${c.verdict}:${c.severity}:${c.alert_count}:${c.slm_calls}:${c.updated_at}:${(c.related_case_ids || []).join(',')}:${c.attack_graph ? c.attack_graph.generated_at : ''}`)
-            });
-            if (!force && signature === lastCasesRenderSignature) {
-                return;
-            }
-            lastCasesRenderSignature = signature;
-
-            document.getElementById('case-summary-count').innerText = `(${cases.length} Cases | ${parentIncidents.length} Parent Incidents)`;
-
-            const parentSection = document.getElementById('parent-incidents-section');
-            const parentList = document.getElementById('parent-incidents-list');
-            if (parentIncidents.length === 0) {
-                parentSection.classList.add('hidden');
-                parentList.innerHTML = '';
-            } else {
-                parentSection.classList.remove('hidden');
-                parentList.innerHTML = parentIncidents.map(inc => {
-                    const timelineHtml = (inc.combined_timeline || []).slice(-6).map(t =>
-                        `<div class="text-[11px] font-mono text-slate-300 border-l-2 border-rose-700 pl-2 py-0.5">
-                            [${escapeHtml(t.time)}] <span class="text-cyan-300">${escapeHtml(t.case_id)}</span> (${escapeHtml(t.domain)}) — ${escapeHtml(t.title)}
-                        </div>`
-                    ).join('');
-                    return `
-                        <div class="p-3 rounded-lg bg-rose-950/30 border border-rose-700/70 space-y-1.5">
-                            <div class="flex justify-between items-center">
-                                <div class="font-bold text-rose-300 text-xs">🔗 ${escapeHtml(inc.id)}: ${escapeHtml(inc.title)}</div>
-                                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-900 text-rose-200 border border-rose-600">${escapeHtml(inc.severity)}</span>
-                            </div>
-                            <div class="text-[11px] font-mono text-slate-300">
-                                Kill-Chain: ${escapeHtml(inc.kill_chain_summary)} | Child Cases: <span class="text-amber-300">${escapeHtml((inc.child_case_ids || []).join(', '))}</span>
-                            </div>
-                            <div class="text-[11px] text-slate-400">${escapeHtml((inc.escalation_reasons || []).join(' | '))}</div>
-                            <div class="space-y-0.5 pt-1">${timelineHtml}</div>
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            const filtered = cases.filter(c => {
-                if (domainFilter && c.domain !== domainFilter) return false;
-                if (statusFilter && c.status !== statusFilter) return false;
-                return true;
-            });
-
-            const listEl = document.getElementById('cases-list');
-            if (filtered.length === 0) {
-                listEl.innerHTML = '<div class="p-4 text-center text-slate-500 border border-dashed border-slate-800 rounded-lg">Chưa có hồ sơ Case nào khớp bộ lọc.</div>';
-                return;
-            }
-
-            listEl.innerHTML = filtered.map(c => {
-                const isExpanded = expandedCaseIds.has(c.id);
-                const sevColors = {
-                    'CRITICAL': 'bg-rose-950 text-rose-300 border-rose-700',
-                    'HIGH': 'bg-amber-950 text-amber-300 border-amber-700',
-                    'MEDIUM': 'bg-yellow-950 text-yellow-300 border-yellow-700',
-                    'LOW': 'bg-slate-800 text-slate-300 border-slate-700'
-                };
-                const sevClass = sevColors[c.severity] || sevColors['LOW'];
-                const verdictColors = {
-                    'TRUE POSITIVE': 'bg-rose-900/80 text-rose-200 border-rose-600',
-                    'SUSPICIOUS': 'bg-amber-900/80 text-amber-200 border-amber-600',
-                    'FALSE POSITIVE': 'bg-emerald-900/80 text-emerald-200 border-emerald-600',
-                    'UNKNOWN': 'bg-slate-800 text-slate-300 border-slate-600'
-                };
-                const vClass = verdictColors[c.verdict] || verdictColors['UNKNOWN'];
-                const statusBadge = c.status === 'CLOSED'
-                    ? '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700">CLOSED</span>'
-                    : '<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-400 border border-emerald-700">OPEN</span>';
-                const domainBadge = c.domain === 'NETWORK'
-                    ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800">NETWORK</span>'
-                    : '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-950 text-purple-300 border border-purple-800">ENDPOINT</span>';
-
-                const targetDisplay = c.domain === 'NETWORK'
-                    ? `Attacker: <span class="text-rose-300 font-bold">${escapeHtml(c.src_ip)}</span> → Victims: <span class="text-amber-300">${escapeHtml((c.victim_ips || []).join(', ') || 'N/A')}</span>`
-                    : `Agent: <span class="text-purple-300 font-bold">${escapeHtml(c.agent_id)}</span> (${escapeHtml((c.victim_ips || []).join(', ') || 'N/A')})`;
-
-                const relatedHtml = (c.related_case_ids && c.related_case_ids.length > 0)
-                    ? `<span class="ml-2 px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-mono text-[10px]">🔗 Related: ${escapeHtml(c.related_case_ids.join(', '))} ${c.parent_incident_id ? '(' + escapeHtml(c.parent_incident_id) + ')' : ''}</span>`
-                    : '';
-
-                const toggleActionStatus = c.status === 'CLOSED'
-                    ? `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'OPEN')" class="px-2 py-1 rounded bg-emerald-900/70 hover:bg-emerald-800 text-emerald-200 border border-emerald-700 text-[11px]">🔓 Mở lại</button>`
-                    : `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'CLOSED')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 text-[11px]">🔒 Đóng Case</button>`;
-
-                const hasGraph = Boolean(c.attack_graph);
-                const isGraphOpen = hasGraph && openGraphCaseIds.has(c.id);
-                const isGraphStale = hasGraph && (c.alert_count > (c.attack_graph.generated_at_alert_count || 0));
-                const graphBtnHtml = !hasGraph
-                    ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-indigo-900/70 hover:bg-indigo-800 text-indigo-200 border border-indigo-700 text-[11px]">🕸️ Vẽ Sơ Đồ</button>`
-                    : `<button onclick="toggleSavedGraph('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-indigo-900/70 hover:bg-indigo-800 text-indigo-200 border border-indigo-700 text-[11px]">${isGraphOpen ? '🕸️ Ẩn Sơ Đồ' : '🕸️ Xem Sơ Đồ Đã Lưu'}</button>` +
-                      ((isGraphOpen || isGraphStale) ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" title="Cập nhật lại sơ đồ theo dữ liệu mới nhất" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-indigo-700/70 text-[11px]">${isGraphStale ? '🔄 Cập Nhật Sơ Đồ' : '🔄 Vẽ Lại'}</button>` : '');
-
-                let graphContainerHtml = '';
-                if (isGraphOpen) {
-                    const g = c.attack_graph;
-                    graphContainerHtml = `
-                        <div class="mt-2 pt-2 border-t border-indigo-800/50 space-y-2 bg-slate-950/80 p-2.5 rounded-lg">
-                            <div class="flex flex-wrap justify-between items-center gap-2 text-[11px]">
-                                <span class="font-bold text-indigo-300">🕸️ SƠ ĐỒ MỐI LIÊN HỆ TRỰC QUAN (${escapeHtml(c.id)}) — Đã lưu lúc ${escapeHtml(g.generated_at)} (${g.generated_at_alert_count} alerts)</span>
-                                <span class="text-slate-400 font-mono">🔴 Attacker | 🟣 Kỹ thuật | 🟡 Mục tiêu | 🔵 File/Hash/Proc | 🟢 SOAR Defense</span>
-                            </div>
-                            ${renderAttackGraphSvg(g)}
-                            <div class="text-[11px] font-mono text-indigo-200 bg-indigo-950/40 border border-indigo-800/60 px-2.5 py-1.5 rounded">
-                                <b>Đường đi tấn công:</b> ${escapeHtml(g.attack_path_summary || '')}
-                            </div>
-                        </div>
-                    `;
-                }
-
-                let detailsHtml = '';
-                if (isExpanded) {
-                    const alertsRows = (c.incident_alerts || []).slice().reverse().map((a, idx) =>
-                        `<div class="border-b border-slate-800/80 py-1 font-mono text-[11px] flex justify-between gap-2">
-                            <span class="text-slate-300">#${(c.incident_alerts.length - idx)} [${escapeHtml(a.captured_at || '')}] Rule ${escapeHtml(a.rule_id || '?')} (Lv.${escapeHtml(a.level || 0)}) — ${escapeHtml(a.title || '')}</span>
-                            <span class="text-slate-400 shrink-0">${escapeHtml(a.src_ip !== 'unknown' ? (a.src_ip + ' → ' + a.victim_ip) : (a.file_path || a.victim_ip))}</span>
-                        </div>`
-                    ).join('');
-                    const escHtml = (c.escalation_reasons && c.escalation_reasons.length > 0)
-                        ? `<div class="text-[11px] text-amber-300 bg-amber-950/30 border border-amber-800/60 p-2 rounded"><b>Lý do nâng mức / Vòng đời:</b><br>${c.escalation_reasons.map(r => '• ' + escapeHtml(r)).join('<br>')}</div>`
-                        : '';
-                    detailsHtml = `
-                        <div class="mt-2 pt-2 border-t border-slate-800 space-y-2 bg-slate-950/60 p-2.5 rounded">
-                            ${escHtml}
-                            <div class="text-[11px] font-semibold text-cyan-300">📜 Danh sách Alert gốc đã gom (${(c.incident_alerts || []).length} alerts lưu kiểm toán):</div>
-                            <div class="max-h-40 overflow-y-auto">${alertsRows || '<div class="text-slate-500">Không có dữ liệu alert</div>'}</div>
-                        </div>
-                    `;
-                }
-
-                return `
-                    <div id="case-card-${escapeHtml(c.id)}" class="p-3 bg-slate-950/70 border border-slate-800 rounded-lg space-y-1.5">
-                        <div class="flex flex-wrap justify-between items-center gap-2">
-                            <div class="flex flex-wrap items-center gap-1.5">
-                                <span class="font-mono font-bold text-white">${escapeHtml(c.id)}</span>
-                                ${domainBadge}
-                                ${statusBadge}
-                                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${sevClass}">${escapeHtml(c.severity)}</span>
-                                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${vClass}">${escapeHtml(c.verdict)}</span>
-                                ${relatedHtml}
-                            </div>
-                            <div class="flex items-center gap-1.5">
-                                <span class="text-[11px] font-mono text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">Alerts: <b>${c.alert_count}</b> | SLM: <b>${c.slm_calls}</b></span>
-                                <button onclick="toggleCaseDetails('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-cyan-900/60 hover:bg-cyan-800 text-cyan-200 border border-cyan-700 text-[11px]">${isExpanded ? '▲ Thu gọn' : '▼ Chi tiết'}</button>
-                                ${graphBtnHtml}
-                                <button onclick="replayCase('${escapeHtml(c.id)}')" class="px-2 py-1 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700 text-[11px]">🔄 Replay</button>
-                                ${toggleActionStatus}
-                            </div>
-                        </div>
-                        <div class="text-xs text-slate-200 font-semibold">${escapeHtml(c.title)}</div>
-                        <div class="text-[11px] font-mono text-slate-400">
-                            ${targetDisplay} | Tạo lúc: ${escapeHtml(c.created_at)} | Cập nhật: ${escapeHtml(c.updated_at)}
-                            ${c.close_reason ? ` | Đóng: <span class="text-slate-300">${escapeHtml(c.close_reason)}</span>` : ''}
-                        </div>
-                        ${graphContainerHtml}
-                        ${detailsHtml}
-                    </div>
-                `;
-            }).join('');
-        }
-
-        let mispSearchTimeout = null;
-        function onMispSearchInput() {
-            if (mispSearchTimeout) clearTimeout(mispSearchTimeout);
-            mispSearchTimeout = setTimeout(() => {
-                loadMispIocs();
-            }, 300);
-        }
-
-        async function loadMispIocs() {
-            try {
-                const searchEl = document.getElementById('misp-search');
-                const searchVal = searchEl ? searchEl.value.trim() : '';
-                const url = searchVal ? `/api/misp?search=${encodeURIComponent(searchVal)}&limit=100` : '/api/misp?limit=100';
-                const res = await fetch(url);
-                const data = await res.json();
-                
-                const total = data.total !== undefined ? data.total : (Array.isArray(data) ? data.length : 0);
-                const iocs = data.iocs || (Array.isArray(data) ? data : []);
-
-                document.getElementById('misp-count').innerText = `(${total.toLocaleString()} IOCs trong Vault)`;
-                const tbody = document.getElementById('misp-table-body');
-                if (iocs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" class="p-3 text-center text-slate-500 font-sans">Không tìm thấy IOC nào trong kho dữ liệu.</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = iocs.map(ioc => {
-                    let badgeColor = 'bg-slate-800 text-slate-300';
-                    const lvl = (ioc.threat_level || ioc.confidence || '').toLowerCase();
-                    if (lvl === 'critical') badgeColor = 'bg-rose-950 text-rose-400 border border-rose-800';
-                    else if (lvl === 'high') badgeColor = 'bg-amber-950 text-amber-400 border border-amber-800';
-                    else if (lvl === 'medium') badgeColor = 'bg-yellow-950 text-yellow-400 border border-yellow-800';
-                    else if (lvl === 'low') badgeColor = 'bg-blue-950 text-blue-400 border border-blue-800';
-
-                    let sourceBadge = 'bg-slate-800 text-slate-400';
-                    const src = ioc.source || '';
-                    if (src.includes('Lab')) sourceBadge = 'bg-emerald-950 text-emerald-400 border border-emerald-800';
-                    else if (src.includes('Feodo')) sourceBadge = 'bg-cyan-950 text-cyan-400 border border-cyan-800';
-                    else if (src.includes('URLhaus')) sourceBadge = 'bg-purple-950 text-purple-400 border border-purple-800';
-                    else if (src.includes('Ipsum')) sourceBadge = 'bg-indigo-950 text-indigo-400 border border-indigo-800';
-
-                    return `
-                        <tr class="hover:bg-slate-800/40">
-                            <td class="p-2 text-slate-400">${escapeHtml(ioc.id)}</td>
-                            <td class="p-2 text-cyan-300 font-mono text-[11px]">${escapeHtml(ioc.type)}</td>
-                            <td class="p-2 text-white font-bold select-all">${escapeHtml(ioc.value)}</td>
-                            <td class="p-2"><span class="px-2 py-0.5 rounded text-[10px] ${badgeColor}">${escapeHtml(ioc.threat_level || ioc.confidence || 'Medium')}</span></td>
-                            <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[10px] font-sans ${sourceBadge}">${escapeHtml(ioc.source || 'OSINT')}</span></td>
-                            <td class="p-2 text-slate-300 font-sans text-xs max-w-xs truncate" title="${escapeHtml(ioc.comment || ioc.threat_name || '')}">${escapeHtml(ioc.comment || ioc.threat_name || '')}</td>
-                            <td class="p-2 text-slate-500 text-[11px] whitespace-nowrap">${escapeHtml(ioc.date || ioc.updated_at || '')}</td>
-                        </tr>
-                    `;
-                }).join('');
-            } catch (e) {
-                console.error("Lỗi tải MISP IOCs:", e);
-            }
-        }
-
-        async function syncMispFeeds() {
-            const btn = document.getElementById('btn-sync-osint');
-            const originalHtml = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = '<span>⏳ Đang tải Feeds từ OSINT...</span>';
-            btn.classList.add('opacity-75', 'cursor-not-allowed');
-
-            try {
-                const res = await fetch('/api/misp/sync', { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    alert(`✅ ${data.message}`);
-                    loadMispIocs();
-                } else {
-                    alert(`❌ Lỗi cập nhật: ${data.message}`);
-                }
-            } catch (e) {
-                alert(`❌ Lỗi kết nối tới server: ${e}`);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalHtml;
-                btn.classList.remove('opacity-75', 'cursor-not-allowed');
-            }
-        }
-
-        async function addMispIoc(e) {
-            e.preventDefault();
-            const type = document.getElementById('ioc-type').value;
-            const value = document.getElementById('ioc-value').value;
-            const threat_level = document.getElementById('ioc-threat').value;
-            const comment = document.getElementById('ioc-comment').value;
-
-            try {
-                const res = await fetch('/api/misp', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({type, value, threat_level, comment})
-                });
-                const data = await res.json();
-                if (data.success) {
-                    document.getElementById('ioc-value').value = '';
-                    document.getElementById('ioc-comment').value = '';
-                    loadMispIocs();
-                } else {
-                    alert('Lỗi: ' + data.message);
-                }
-            } catch (err) {
-                alert('Lỗi gửi request: ' + err);
-            }
-        }
-
-        let cachedAssetsData = [];
-        let lastAssetsRenderSignature = '';
-
-        function toggleAssetPanel() {
-            const panel = document.getElementById('asset-panel');
-            panel.classList.toggle('hidden');
-            if (!panel.classList.contains('hidden')) {
-                renderAssetsFromCache(true);
-            }
-        }
-
-        function getAssetLabelBadgeClass(label) {
-            const lbl = (label || '').toLowerCase().trim();
-            if (lbl === 'firewall' || lbl === 'router' || lbl === 'network') {
-                return 'bg-amber-950 text-amber-300 border-amber-700';
-            }
-            if (lbl === 'linux') {
-                return 'bg-cyan-950 text-cyan-300 border-cyan-700';
-            }
-            if (lbl === 'windows') {
-                return 'bg-sky-950 text-sky-300 border-sky-700';
-            }
-            if (lbl === 'máy trạm' || lbl === 'endpoint') {
-                return 'bg-purple-950 text-purple-300 border-purple-700';
-            }
-            if (lbl === 'server' || lbl === 'siem' || lbl === 'soc' || lbl === 'web' || lbl === 'gpu-host' || lbl === 'ai-core') {
-                return 'bg-indigo-950 text-indigo-300 border-indigo-700';
-            }
-            return 'bg-slate-800 text-slate-300 border-slate-700';
-        }
-
-        function syncAssetFilterOptions(assets) {
-            const selectEl = document.getElementById('asset-filter-label');
-            if (!selectEl) return;
-            const currentVal = selectEl.value;
-            const knownOptions = new Set(Array.from(selectEl.options).map(o => o.value));
-            assets.forEach(a => {
-                (a.labels || []).forEach(lbl => {
-                    const clean = (lbl || '').trim().toLowerCase();
-                    if (clean && !knownOptions.has(clean)) {
-                        knownOptions.add(clean);
-                        const opt = document.createElement('option');
-                        opt.value = clean;
-                        opt.textContent = clean;
-                        selectEl.appendChild(opt);
-                    }
-                });
-            });
-            selectEl.value = currentVal;
-        }
-
-        function renderAssetsFromCache(force = false) {
-            const assets = cachedAssetsData || [];
-            syncAssetFilterOptions(assets);
-
-            const searchEl = document.getElementById('asset-search');
-            const labelEl = document.getElementById('asset-filter-label');
-            const searchQuery = searchEl ? searchEl.value.trim().toLowerCase() : '';
-            const labelFilter = labelEl ? labelEl.value.trim().toLowerCase() : '';
-
-            const signature = JSON.stringify(assets) + '|' + searchQuery + '|' + labelFilter;
-            if (!force && signature === lastAssetsRenderSignature) {
-                return;
-            }
-            lastAssetsRenderSignature = signature;
-
-            const totalCasesLinked = assets.reduce((acc, a) => acc + (a.case_count || 0), 0);
-            const summaryEl = document.getElementById('asset-summary-count');
-            if (summaryEl) {
-                summaryEl.innerText = `(${assets.length} Thiết bị | ${totalCasesLinked} lượt Case ghi nhận)`;
-            }
-
-            const filtered = assets.filter(a => {
-                if (labelFilter && !(a.labels || []).some(l => (l || '').toLowerCase() === labelFilter)) {
-                    return false;
-                }
-                if (searchQuery) {
-                    const hay = [
-                        a.id,
-                        a.name,
-                        a.ip,
-                        ...(a.extra_ips || []),
-                        a.agent_id,
-                        ...(a.labels || []),
-                        a.owner,
-                        ...(a.case_ids || [])
-                    ].join(' ').toLowerCase();
-                    if (!hay.includes(searchQuery)) return false;
-                }
-                return true;
-            });
-
-            const tbody = document.getElementById('asset-table-body');
-            if (!tbody) return;
-            if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Không tìm thấy thiết bị nào khớp bộ lọc.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = filtered.map(a => {
-                const labelsHtml = (a.labels && a.labels.length > 0)
-                    ? a.labels.map(lbl => `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-mono border ${getAssetLabelBadgeClass(lbl)}">${escapeHtml(lbl)}</span>`).join(' ')
-                    : '<span class="text-slate-500 text-[11px]">Chưa gắn nhãn</span>';
-
-                const ipsList = (a.all_ips && a.all_ips.length > 0) ? a.all_ips.join(', ') : (a.ip || 'N/A');
-                const agentText = a.agent_id ? `<div class="text-[10px] text-purple-300 font-mono mt-0.5">Wazuh Agent: #${escapeHtml(a.agent_id)}</div>` : '';
-                const containmentBadge = a.containment_status
-                    ? `<div class="mt-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-950/70 text-amber-300 border border-amber-700/70">🛡️ ${escapeHtml(a.containment_status)}</div>`
-                    : '';
-
-                const caseCount = Number(a.case_count || 0);
-                const openCount = Number(a.open_case_count || 0);
-                const caseCountColor = caseCount === 0
-                    ? 'bg-slate-800 text-slate-400 border-slate-700'
-                    : (openCount > 0 ? 'bg-rose-950 text-rose-300 border-rose-700 font-bold' : 'bg-cyan-950 text-cyan-300 border-cyan-700 font-bold');
-
-                const caseLinksHtml = (a.case_ids && a.case_ids.length > 0)
-                    ? '<div class="flex flex-wrap gap-1 mt-1">' + a.case_ids.slice(0, 4).map(cid =>
-                        `<button onclick="openCaseFromAsset('${escapeHtml(cid)}')" class="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-cyan-950 text-cyan-300 border border-slate-700 hover:border-cyan-700 font-mono text-[10px] transition">${escapeHtml(cid)}</button>`
-                      ).join('') + (a.case_ids.length > 4 ? `<span class="text-[10px] text-slate-400">+${a.case_ids.length - 4}</span>` : '') + '</div>'
-                    : '';
-
-                return `
-                    <tr class="hover:bg-slate-800/40 align-top">
-                        <td class="p-2.5">
-                            <div class="font-bold text-white">${escapeHtml(a.name)}</div>
-                            <div class="text-[10px] font-mono text-emerald-400">${escapeHtml(a.id)}</div>
-                            ${containmentBadge}
-                        </td>
-                        <td class="p-2.5 font-mono text-slate-200">
-                            <div>${escapeHtml(ipsList)}</div>
-                            ${agentText}
-                        </td>
-                        <td class="p-2.5">
-                            <div class="flex flex-wrap gap-1">${labelsHtml}</div>
-                        </td>
-                        <td class="p-2.5 text-slate-200 font-medium">${escapeHtml(a.owner || 'Unassigned')}</td>
-                        <td class="p-2.5">
-                            <div class="flex items-center gap-1.5">
-                                <span class="px-2 py-0.5 rounded text-[11px] font-mono border ${caseCountColor}">${caseCount} Case</span>
-                                ${openCount > 0 ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-amber-950/70 text-amber-300 border border-amber-700/70">${openCount} đang mở</span>` : ''}
-                            </div>
-                            ${caseLinksHtml}
-                        </td>
-                        <td class="p-2.5 text-right whitespace-nowrap space-x-1">
-                            <button onclick="editAssetItem('${escapeHtml(a.id)}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[11px]">✏️ Sửa</button>
-                            <button onclick="deleteAssetItem('${escapeHtml(a.id)}', '${escapeHtml(a.name)}')" class="px-2 py-1 rounded bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800 text-[11px]">🗑️ Xóa</button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        function editAssetItem(assetId) {
-            const asset = (cachedAssetsData || []).find(a => a.id === assetId);
-            if (!asset) return;
-            document.getElementById('asset-edit-id').value = asset.id || '';
-            document.getElementById('asset-name').value = asset.name || '';
-            document.getElementById('asset-ip').value = asset.ip || '';
-            document.getElementById('asset-agent-id').value = asset.agent_id || '';
-            document.getElementById('asset-labels').value = (asset.labels || []).join(', ');
-            document.getElementById('asset-owner').value = asset.owner || '';
-            document.getElementById('btn-asset-submit').innerText = '💾 Cập nhật';
-            document.getElementById('btn-asset-cancel-edit').classList.remove('hidden');
-            document.getElementById('asset-name').focus();
-        }
-
-        function resetAssetForm() {
-            document.getElementById('asset-edit-id').value = '';
-            document.getElementById('asset-name').value = '';
-            document.getElementById('asset-ip').value = '';
-            document.getElementById('asset-agent-id').value = '';
-            document.getElementById('asset-labels').value = '';
-            document.getElementById('asset-owner').value = '';
-            document.getElementById('btn-asset-submit').innerText = '+ Lưu';
-            document.getElementById('btn-asset-cancel-edit').classList.add('hidden');
-        }
-
-        async function saveAssetForm(e) {
-            e.preventDefault();
-            const id = document.getElementById('asset-edit-id').value.trim();
-            const name = document.getElementById('asset-name').value.trim();
-            const ip = document.getElementById('asset-ip').value.trim();
-            const agent_id = document.getElementById('asset-agent-id').value.trim();
-            const labels = document.getElementById('asset-labels').value.trim();
-            const owner = document.getElementById('asset-owner').value.trim();
-
-            try {
-                const res = await fetch('/api/assets', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ id: id || undefined, name, ip, agent_id, labels, owner })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    cachedAssetsData = data.assets || cachedAssetsData;
-                    const badge = document.getElementById('btn-asset-count');
-                    if (badge) badge.innerText = cachedAssetsData.length;
-                    resetAssetForm();
-                    renderAssetsFromCache(true);
-                } else {
-                    alert('❌ ' + (data.message || 'Không thể lưu thiết bị.'));
-                }
-            } catch (err) {
-                alert('❌ Lỗi kết nối server: ' + err);
-            }
-        }
-
-        async function deleteAssetItem(assetId, assetName) {
-            if (!confirm(`Bạn có chắc muốn xóa thiết bị ${assetId} (${assetName}) khỏi Asset Manager?`)) return;
-            try {
-                const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
-                const data = await res.json();
-                if (data.success) {
-                    cachedAssetsData = data.assets || [];
-                    const badge = document.getElementById('btn-asset-count');
-                    if (badge) badge.innerText = cachedAssetsData.length;
-                    if (document.getElementById('asset-edit-id').value === assetId) {
-                        resetAssetForm();
-                    }
-                    renderAssetsFromCache(true);
-                } else {
-                    alert('❌ ' + (data.message || 'Không thể xóa thiết bị.'));
-                }
-            } catch (err) {
-                alert('❌ Lỗi xóa thiết bị: ' + err);
-            }
-        }
-
-        function openCaseFromAsset(caseId) {
-            const casePanel = document.getElementById('case-panel');
-            if (casePanel && casePanel.classList.contains('hidden')) {
-                casePanel.classList.remove('hidden');
-            }
-            const domainEl = document.getElementById('case-filter-domain');
-            const statusEl = document.getElementById('case-filter-status');
-            if (domainEl) domainEl.value = '';
-            if (statusEl) statusEl.value = '';
-            expandedCaseIds.add(caseId);
-            renderCasesFromCache(true);
-            setTimeout(() => {
-                const targetCard = document.getElementById(`case-card-${caseId}`);
-                if (targetCard) {
-                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            }, 50);
-        }
-
-        async function triggerSim() {
-            const btn = document.getElementById('btn-sim');
-            btn.disabled = true;
-            btn.innerHTML = '<span>⏳ Đang gửi cảnh báo...</span>';
-            try {
-                await fetch('/api/simulate', {method: 'POST'});
-            } catch (e) {
-                console.error(e);
-            }
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.innerHTML = '<span>⚡ Bắn Cảnh Báo Giả Lập (Test TI & Qwen)</span>';
-            }, 5000);
-        }
-
-        async function clearBlocklist() {
-            if (!confirm('Bạn có chắc muốn xóa sạch toàn bộ IP trong Alias SOC_BLOCKLIST trên pfSense?')) return;
-            const btn = document.getElementById('btn-clear');
-            btn.disabled = true;
-            btn.innerText = 'Đang xóa...';
-            try {
-                await fetch('/api/clear-blocklist', {method: 'POST'});
-            } catch (e) {
-                console.error(e);
-            }
-            btn.disabled = false;
-            btn.innerText = '🧹 Xóa Sạch SOC_BLOCKLIST';
-            refresh();
-        }
-
-        async function refresh() {
-            try {
-                const res = await fetch('/api/state');
-                const data = await res.json();
-                document.getElementById('st-total').innerText = data.stats.total_alerts;
-                document.getElementById('st-tp').innerText = data.stats.true_positives;
-                document.getElementById('st-fp').innerText = data.stats.false_positives;
-                cachedCasesData = {
-                    cases: data.cases || [],
-                    parent_incidents: data.parent_incidents || []
-                };
-                const openCaseCount = (data.cases || []).filter(c => c.status !== 'CLOSED').length;
-                const caseCountBadge = document.getElementById('btn-case-count');
-                if (caseCountBadge) {
-                    caseCountBadge.innerText = openCaseCount;
-                }
-                const casePanel = document.getElementById('case-panel');
-                if (casePanel && !casePanel.classList.contains('hidden')) {
-                    renderCasesFromCache();
-                }
-                cachedAssetsData = data.assets || [];
-                const assetCountBadge = document.getElementById('btn-asset-count');
-                if (assetCountBadge) {
-                    assetCountBadge.innerText = cachedAssetsData.length;
-                }
-                const assetPanel = document.getElementById('asset-panel');
-                if (assetPanel && !assetPanel.classList.contains('hidden')) {
-                    renderAssetsFromCache();
-                }
-                const blockedIps = (data.stats.blocked_ips && data.stats.blocked_ips.length > 0) ? data.stats.blocked_ips : [];
-                const epActions = (data.stats.endpoint_actions && data.stats.endpoint_actions.length > 0) ? data.stats.endpoint_actions : [];
-                const combinedActions = [...blockedIps.map(ip => `🔥 pfSense: ${ip}`), ...epActions.map(a => `🛡️ ${a}`)];
-                document.getElementById('st-blocked').innerText = combinedActions.length > 0 ? combinedActions.join(' | ') : 'Chưa có';
-
-                const streamBox = document.getElementById('stream-box');
-                if (!data.reasoning_stream || data.reasoning_stream.length === 0) {
-                    streamBox.innerHTML = '<div class="h-full flex items-center justify-center text-slate-500 font-mono text-xs">[Hệ thống sẵn sàng. Đang lắng nghe sự kiện từ pfSense, Wazuh & Threat Intel...]</div>';
-                } else {
-                    streamBox.innerHTML = data.reasoning_stream.map(s => {
-                        let tagColor = 'text-cyan-300';
-                        if (s.type === 'ALERT') tagColor = 'text-yellow-400 font-bold';
-                        else if (s.type === 'CASE') tagColor = 'text-amber-300 font-semibold';
-                        else if (s.type === 'THOUGHT') tagColor = 'text-purple-400';
-                        else if (s.type === 'TOOL') tagColor = 'text-indigo-400 font-semibold';
-                        else if (s.type === 'VERDICT') tagColor = 'text-rose-400 font-bold';
-                        else if (s.type === 'ERROR') tagColor = 'text-red-500 font-bold';
-
-                        return `<div class="border-b border-slate-800/80 pb-1 leading-relaxed">
-                            <span class="text-slate-500">[${escapeHtml(s.time)}]</span> 
-                            <span class="${tagColor}">[${escapeHtml(s.type)}]</span> 
-                            ${escapeHtml(s.message)}
-                        </div>`;
-                    }).join('');
-                }
-
-                const decisionBox = document.getElementById('decision-box');
-                if (!data.decisions || data.decisions.length === 0) {
-                    decisionBox.innerHTML = `
-                        <div class="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 border border-dashed border-slate-800/80 rounded-lg">
-                            <div class="text-3xl mb-2">🛡️</div>
-                            <div class="font-semibold text-slate-400">Chưa có phán quyết nào</div>
-                            <div class="text-xs text-slate-500 mt-1">Hệ thống đang trực chiến. Bấm nút <b>"Bắn Cảnh Báo Giả Lập"</b> phía trên để kiểm tra phản ứng của Qwen AI và Threat Intel.</div>
-                        </div>`;
-                } else {
-                    decisionBox.innerHTML = data.decisions.map(d => {
-                        let borderClass = 'border-slate-600 bg-slate-900/60';
-                        let verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 shadow">UNKNOWN</span>';
-
-                        if (d.verdict === 'TRUE POSITIVE') {
-                            borderClass = 'border-rose-500 bg-rose-950/20';
-                            verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-rose-950 text-rose-400 border border-rose-800 shadow">TRUE POSITIVE</span>';
-                        } else if (d.verdict === 'FALSE POSITIVE') {
-                            borderClass = 'border-emerald-500 bg-emerald-950/20';
-                            verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 shadow">FALSE POSITIVE</span>';
-                        } else if (d.verdict === 'SUSPICIOUS') {
-                            borderClass = 'border-amber-500 bg-amber-950/20';
-                            verdictBadge = '<span class="text-xs px-2.5 py-0.5 rounded font-mono font-bold bg-amber-950 text-amber-400 border border-amber-800 shadow">SUSPICIOUS</span>';
-                        }
-
-                        // Phân tách ngữ nghĩa IP mạng vs Endpoint FIM (Quy tắc 2)
-                        let ipInfoHtml = '';
-                        if (d.src_ip && d.src_ip !== 'unknown') {
-                            ipInfoHtml = `SRC: <span class="text-cyan-300 font-bold">${escapeHtml(d.src_ip)}</span>`;
-                            if (d.victim_ip && d.victim_ip !== 'unknown') {
-                                ipInfoHtml += ` | Target: <span class="text-amber-300">${escapeHtml(d.victim_ip)}</span>`;
-                            }
-                        } else {
-                            const endpointHost = (d.victim_ip && d.victim_ip !== 'unknown') ? d.victim_ip : (d.agent_ip && d.agent_ip !== 'unknown' ? d.agent_ip : 'Internal Host');
-                            ipInfoHtml = `Host: <span class="text-amber-300 font-bold">${escapeHtml(endpointHost)}</span>`;
-                        }
-                        if (d.file_path) {
-                            ipInfoHtml += ` | File: <span class="text-purple-300 font-mono">${escapeHtml(d.file_path)}</span>`;
-                        }
-
-                        // MITRE Badges
-                        let mitreHtml = '';
-                        if (d.mitre && d.mitre.length > 0) {
-                            mitreHtml = '<div class="flex flex-wrap gap-1 mt-1.5">' + d.mitre.map(m => 
-                                `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-purple-950 text-purple-300 border border-purple-800">
-                                    🛡️ MITRE: ${escapeHtml(m)}
-                                </span>`
-                            ).join('') + '</div>';
-                        }
-
-                        // Threat Intel Summary Badge
-                        let tiHtml = '';
-                        if (d.ti_summary) {
-                            tiHtml = `<div class="mt-1.5 text-[11px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/80 px-2.5 py-1 rounded">
-                                🌐 <b>Threat Intel:</b> ${escapeHtml(d.ti_summary)}
-                            </div>`;
-                        }
-
-                        // Wazuh Active Response 2-Phase Badge
-                        let arHtml = '';
-                        if (d.endpoint_response) {
-                            const isLocked = d.endpoint_response.includes('Giữ khóa cô lập');
-                            const arStyle = isLocked
-                                ? 'text-amber-300 bg-amber-950/60 border-amber-700/80'
-                                : 'text-emerald-300 bg-emerald-950/60 border-emerald-700/80';
-                            arHtml = `<div class="mt-1.5 text-[11px] font-mono ${arStyle} border px-2.5 py-1 rounded">
-                                🛡️ <b>Wazuh Active Response (:55000):</b> ${escapeHtml(d.endpoint_response)}
-                            </div>`;
-                        }
-
-                        return `
-                            <div class="p-3.5 bg-slate-900/90 rounded-lg border-l-4 ${borderClass} border border-slate-800 shadow">
-                                <div class="flex justify-between items-start mb-1">
-                                    <div>
-                                        <div class="font-bold text-white text-sm">${d.case_id ? `<span class="text-cyan-400 font-mono text-xs mr-1">[${escapeHtml(d.case_id)}]</span>` : ''}${escapeHtml(d.title)}</div>
-                                        <div class="text-xs font-mono text-slate-400 mt-0.5">
-                                            ${ipInfoHtml} | 
-                                            Thời gian: <span class="text-slate-300">${escapeHtml(d.time)}</span> | 
-                                            Nguồn: <span class="text-slate-300">${escapeHtml(d.source)}</span>
-                                        </div>
-                                    </div>
-                                    <div>${verdictBadge}</div>
-                                </div>
-                                ${mitreHtml}
-                                ${tiHtml}
-                                ${arHtml}
-                                <div class="text-slate-200 mt-2 whitespace-pre-line text-xs font-sans leading-relaxed border-t border-slate-800/80 pt-2 bg-slate-950/40 p-2 rounded">
-                                    ${escapeHtml(d.summary)}
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                }
-            } catch (err) {
-                console.error("Lỗi cập nhật trạng thái:", err);
-            }
-        }
-        setInterval(refresh, 1500);
-        refresh();
-    </script>
+    <script src="/static/js/core/store.js"></script>
+    <script src="/static/js/core/utils.js"></script>
+    <script src="/static/js/core/shell.js"></script>
+    <script src="/static/js/modules/cases.js"></script>
+    <script src="/static/js/modules/misp.js"></script>
+    <script src="/static/js/modules/assets.js"></script>
+    <script src="/static/js/modules/rooms.js"></script>
+    <script src="/static/js/modules/dashboard.js"></script>
+    <script src="/static/js/app.js"></script>
 </body>
 </html>

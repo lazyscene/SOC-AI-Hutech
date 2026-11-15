@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import threading
 from datetime import datetime
 from core.llm import call_ollama
 from core.parsers import parse_verdict, extract_mitre_tags, extract_ti_summary
@@ -18,7 +20,7 @@ from tools.wazuh_tools import (
     tool_wazuh_endpoint_response,
     validate_target_agent,
 )
-from web.state import STATE, log_event, get_agent_memory_context, save_persistent_state
+from web.state import STATE, log_event, get_agent_memory_context, save_persistent_state, format_vn_time
 
 def run_agent_loop(alert_summary: dict):
     replay_case_id = alert_summary.get("_replay_case_id")
@@ -43,7 +45,7 @@ def run_agent_loop(alert_summary: dict):
     if replay_case_id and get_case_by_id(replay_case_id):
         case_obj = get_case_by_id(replay_case_id)
         should_call_slm = True
-        slm_reason = f"Replay kiểm toán {replay_case_id}"
+        slm_reason = alert_summary.get("_followup_reason") or f"Replay kiểm toán {replay_case_id}"
     else:
         case_info = ingest_alert_into_case(alert_summary)
         case_obj = case_info["case"]
@@ -61,6 +63,7 @@ def run_agent_loop(alert_summary: dict):
         return
 
     case_obj["is_analyzing"] = True
+    case_obj["analyzing_since_ts"] = time.time()
     try:
         is_fim = ("syscheck" in str(alert_summary.get("source", "")).lower() or
                   bool(file_path) or
@@ -143,6 +146,8 @@ def run_agent_loop(alert_summary: dict):
         # Làm gọn payload gửi cho LLM để tránh hiểu nhầm agent_ip="unknown" của Syslog là sự kiện FIM
         prompt_payload = dict(alert_summary)
         prompt_payload.pop("_replay_case_id", None)
+        prompt_payload.pop("_followup_slm", None)
+        prompt_payload.pop("_followup_reason", None)
         if not is_fim and src_ip not in ["unknown", None, ""]:
             prompt_payload.pop("file_path", None)
             prompt_payload.pop("event_type", None)
@@ -405,7 +410,7 @@ def run_agent_loop(alert_summary: dict):
         log_event("VERDICT", f"[{case_obj['id']}][{verdict}] {final_text[:120]}...")
         STATE["decisions"].appendleft({
             "case_id": case_obj["id"],
-            "time": datetime.now().strftime("%H:%M:%S"),
+            "time": format_vn_time(),
             "source": alert_summary.get("source", "pfSense / Wazuh SIEM"),
             "title": alert_summary.get("title", "Cảnh báo an ninh"),
             "src_ip": src_ip,
@@ -423,6 +428,23 @@ def run_agent_loop(alert_summary: dict):
         save_persistent_state()
     finally:
         case_obj["is_analyzing"] = False
+        case_obj.pop("analyzing_since_ts", None)
+        pending_reason = case_obj.pop("pending_slm_reason", None)
+        if not replay_case_id and not alert_summary.get("_followup_slm"):
+            needs_catchup = bool(pending_reason) or (int(case_obj.get("slm_calls", 0) or 0) == 0)
+            incident_alerts = case_obj.get("incident_alerts") or []
+            if needs_catchup and incident_alerts and case_obj.get("status", "OPEN") == "OPEN":
+                followup_alert = dict(incident_alerts[-1])
+                followup_alert["_replay_case_id"] = case_obj["id"]
+                followup_alert["_followup_slm"] = True
+                followup_alert["_followup_reason"] = (
+                    pending_reason or f"SLM tự động phân tích bù {case_obj['id']} (slm_calls=0)"
+                )
+                threading.Thread(
+                    target=run_agent_loop,
+                    args=(followup_alert,),
+                    daemon=True,
+                ).start()
 
 
 def replay_case_alerts(case_id: str) -> int:

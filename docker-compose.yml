@@ -12,6 +12,7 @@ services:
       - "514:514/udp"       # Nhận Syslog từ pfSense & Suricata
       - "55000:55000/tcp"   # Wazuh API
     environment:
+      - TZ=Asia/Ho_Chi_Minh
       - API_USERNAME=${WAZUH_API_USERNAME:-wazuh-wui}
       - API_PASSWORD=${WAZUH_API_PASSWORD:-MyS3cr3tP4ssw0rd.!}
     volumes:
@@ -35,6 +36,7 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     environment:
+      - TZ=Asia/Ho_Chi_Minh
       - OLLAMA_API_URL=${OLLAMA_API_URL:-http://192.168.63.1:11434/api/chat}
       - LLM_MODEL=${LLM_MODEL:-qwen3.5:4b}
       - WAZUH_ALERT_FILE=${WAZUH_ALERT_FILE:-/var/ossec/logs/alerts/alerts.json}

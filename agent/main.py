@@ -1,8 +1,10 @@
+import os
 import threading
 import time
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from web.routes import router as web_router
 from web.state import log_event, load_persistent_state
 from watchers.tailers import tail_wazuh
@@ -36,6 +38,9 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="AI Agent Mini SOC Visualizer", lifespan=lifespan)
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "static")
+os.makedirs(_STATIC_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 app.include_router(web_router)
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import os
 import json
 import threading
 from datetime import datetime
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 from fastapi.responses import HTMLResponse
 from web.state import STATE, save_persistent_state
 from tools.firewall_tools import clear_all_pfsense_blocks, tool_unblock_firewall_ip, sync_pfsense_blocklist
@@ -18,12 +18,25 @@ from core.asset_manager import (
     upsert_asset,
     delete_asset,
 )
+from core.contingency_room import (
+    get_contingency_rooms_overview,
+    create_contingency_room,
+    update_contingency_room,
+    delete_contingency_room,
+    attach_case_to_room,
+    detach_case_from_room,
+    post_room_message,
+    create_and_execute_decision,
+    revert_tactical_decision,
+    reapply_tactical_decision,
+)
 
 router = APIRouter()
 
 @router.get("/api/state")
 def get_state():
     close_expired_cases()
+    rooms_overview = get_contingency_rooms_overview()
     return {
         "stats": STATE["stats"],
         "endpoint_containment": STATE.get("endpoint_containment", {}),
@@ -31,6 +44,8 @@ def get_state():
         "cases": STATE.get("cases", []),
         "parent_incidents": STATE.get("parent_incidents", []),
         "assets": get_assets_with_case_counts(),
+        "contingency_rooms": rooms_overview["rooms"],
+        "tactical_decisions": rooms_overview["decisions"],
         "reasoning_stream": list(STATE["reasoning_stream"]),
         "decisions": list(STATE["decisions"])
     }
@@ -106,6 +121,131 @@ def remove_asset(asset_id: str):
         "success": ok,
         "message": msg,
         "assets": get_assets_with_case_counts(),
+    }
+
+
+@router.get("/api/rooms")
+def list_contingency_rooms():
+    close_expired_cases()
+    return get_contingency_rooms_overview()
+
+
+@router.post("/api/rooms")
+def add_contingency_room(payload: dict):
+    ok, room, msg = create_contingency_room(payload)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "room": room,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
+    }
+
+
+@router.patch("/api/rooms/{room_id}")
+@router.post("/api/rooms/{room_id}/update")
+def edit_contingency_room(room_id: str, payload: dict):
+    ok, room, msg = update_contingency_room(room_id, payload)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "room": room,
+        "message": msg,
+        "rooms": overview["rooms"],
+    }
+
+
+@router.delete("/api/rooms/{room_id}")
+def remove_contingency_room(room_id: str):
+    ok, msg = delete_contingency_room(room_id)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "message": msg,
+        "rooms": overview["rooms"],
+    }
+
+
+@router.post("/api/rooms/{room_id}/cases")
+def add_case_to_room(room_id: str, payload: dict):
+    ok, room, msg = attach_case_to_room(room_id, payload.get("case_id", ""))
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "room": room,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
+    }
+
+
+@router.delete("/api/rooms/{room_id}/cases/{case_id}")
+def remove_case_from_room(room_id: str, case_id: str):
+    ok, room, msg = detach_case_from_room(room_id, case_id)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "room": room,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
+    }
+
+
+@router.post("/api/rooms/{room_id}/messages")
+def send_room_message(room_id: str, payload: dict):
+    ok, room, msg = post_room_message(room_id, payload)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "room": room,
+        "message": msg,
+        "rooms": overview["rooms"],
+    }
+
+
+@router.post("/api/rooms/{room_id}/decisions")
+def execute_room_decision(room_id: str, payload: dict):
+    ok, res_obj, msg = create_and_execute_decision(room_id, payload)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "decision": res_obj.get("decision") if isinstance(res_obj, dict) else None,
+        "room": res_obj.get("room") if isinstance(res_obj, dict) else None,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
+    }
+
+
+@router.post("/api/decisions/{decision_id}/revert")
+def revert_decision(decision_id: str, payload: dict = Body(default={})):
+    reason = payload.get("reason", "") if isinstance(payload, dict) else ""
+    ok, res_obj, msg = revert_tactical_decision(decision_id, reason=reason)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "decision": res_obj.get("decision") if isinstance(res_obj, dict) else None,
+        "room": res_obj.get("room") if isinstance(res_obj, dict) else None,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
+    }
+
+
+@router.post("/api/decisions/{decision_id}/reapply")
+def reapply_decision(decision_id: str, payload: dict = Body(default={})):
+    reason = payload.get("reason", "") if isinstance(payload, dict) else ""
+    ok, res_obj, msg = reapply_tactical_decision(decision_id, reason=reason)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "decision": res_obj.get("decision") if isinstance(res_obj, dict) else None,
+        "room": res_obj.get("room") if isinstance(res_obj, dict) else None,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
     }
 
 @router.post("/api/simulate")
