@@ -551,10 +551,19 @@
                                             <label class="block text-[10px] text-muted-foreground mb-1">Mục tiêu (IP / Agent / ASSET / CASE) *</label>
                                             <input id="dec-target" required type="text" placeholder="192.168.63.140 / 002 / ASSET-0003..." class="iris-input w-full px-2 py-1 text-xs font-mono">
                                         </div>
-                                        <div class="col-span-8 sm:col-span-9">
+                                        <div class="col-span-12 sm:col-span-6">
                                             <input id="dec-reason" type="text" placeholder="Lý do ra quyết định tác chiến..." class="iris-input w-full px-2.5 py-1.5 text-xs">
                                         </div>
-                                        <div class="col-span-4 sm:col-span-3">
+                                        <div class="col-span-6 sm:col-span-3">
+                                            <select id="dec-ttl-seconds" title="Thời hạn hiệu lực (TTL)" class="iris-input w-full px-2 py-1.5 text-xs font-mono">
+                                                <option value="3600" selected>⏱️ TTL 1 giờ</option>
+                                                <option value="1800">⏱️ TTL 30 phút</option>
+                                                <option value="14400">⏱️ TTL 4 giờ</option>
+                                                <option value="86400">⏱️ TTL 24 giờ</option>
+                                                <option value="0">♾️ Không TTL</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-span-6 sm:col-span-3">
                                             <button type="submit" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-1.5 rounded-lg transition">⚖️ Thực Thi</button>
                                         </div>
                                     </form>
@@ -756,6 +765,39 @@
                     </div>
                 </section>
             </main>
+        </div>
+    </div>
+
+    <!-- Safety Confirmation Modal for Reverting Active Controls / Decisions -->
+    <div id="modal-confirm-revert" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="iris-panel w-full max-w-lg p-5 space-y-4 shadow-2xl border-rose-500/40" role="dialog" aria-modal="true" aria-labelledby="revert-modal-title">
+            <div class="flex items-start justify-between gap-3 border-b border-border pb-3">
+                <div>
+                    <h3 id="revert-modal-title" class="text-sm font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                        <span>⚠️</span> Xác nhận Đảo ngược Kiểm soát (Human Safety Gate)
+                    </h3>
+                    <div id="revert-modal-header-meta" class="text-[11px] font-mono text-muted-foreground mt-1"></div>
+                </div>
+                <button type="button" onclick="closeRevertConfirmModal()" class="text-muted-foreground hover:text-foreground text-sm px-2 py-0.5 rounded">✕</button>
+            </div>
+
+            <div id="revert-modal-origin" class="text-xs rounded-lg p-2.5 border border-border bg-muted/40"></div>
+            <div id="revert-modal-impact-banner" class="text-xs rounded-lg p-3 border border-amber-500/40 bg-amber-500/10 space-y-1.5"></div>
+
+            <form onsubmit="confirmRevertModalSubmit(event)" class="space-y-3">
+                <input type="hidden" id="revert-modal-decision-id" value="">
+                <div>
+                    <label for="revert-confirm-reason" class="block text-xs font-semibold text-foreground mb-1">
+                        Lý do đảo ngược bắt buộc (Audit Log &amp; Case Timeline) <span class="text-rose-500">*</span>
+                    </label>
+                    <textarea id="revert-confirm-reason" rows="3" required placeholder="Nhập lý do chi tiết (ví dụ: Đã xác minh xử lý sạch tiến trình trên Linux Server / False Positive)..." class="iris-input w-full px-3 py-2 text-xs"></textarea>
+                    <div id="revert-confirm-error" class="hidden text-[11px] text-rose-500 font-medium mt-1"></div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2 border-t border-border">
+                    <button type="button" onclick="closeRevertConfirmModal()" class="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium transition">Hủy bỏ</button>
+                    <button id="btn-confirm-revert-submit" type="submit" class="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition">↩️ Xác nhận &amp; Thực thi Đảo ngược</button>
+                </div>
+            </form>
         </div>
     </div>
 

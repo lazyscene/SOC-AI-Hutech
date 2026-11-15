@@ -110,6 +110,7 @@ def run_agent_loop(alert_summary: dict):
                 process_name=process_name,
                 process_id=process_id,
                 reason=alert_summary.get("title", "Phát hiện tệp/tiến trình độc hại trên Endpoint"),
+                case_id=case_obj["id"],
             )
 
         if is_endpoint_event:
@@ -267,11 +268,16 @@ def run_agent_loop(alert_summary: dict):
                         result = TOOLS_MAP[fn_name](**fn_args) if fn_name in TOOLS_MAP else "Ham khong ton tai."
                 else:
                     if fn_name in TOOLS_MAP:
-                        result = TOOLS_MAP[fn_name](**fn_args)
+                        call_args = dict(fn_args or {})
                         if fn_name == "tool_wazuh_endpoint_response":
-                            chosen_act = str(fn_args.get("action", "")).strip().lower()
+                            call_args.setdefault("case_id", case_obj["id"])
+                        result = TOOLS_MAP[fn_name](**call_args)
+                        if fn_name == "tool_wazuh_endpoint_response":
+                            chosen_act = str(call_args.get("action", "")).strip().lower()
                             if chosen_act in ["release_isolation", "keep_isolated"]:
                                 phase2_action_taken = chosen_act
+                            elif chosen_act == "fast_contain" and not phase1_info:
+                                phase1_info = STATE.get("endpoint_containment", {}).get(str(call_args.get("agent_id", agent_id)).strip())
                     else:
                         result = f"Ham {fn_name} khong ton tai."
 
@@ -339,6 +345,7 @@ def run_agent_loop(alert_summary: dict):
                     process_name=process_name,
                     process_id=process_id,
                     reason=alert_summary.get("title", "Phát hiện mối đe dọa TRUE POSITIVE trên Endpoint"),
+                    case_id=case_obj["id"],
                 )
 
             if not phase2_action_taken:
@@ -369,6 +376,7 @@ def run_agent_loop(alert_summary: dict):
                         action="keep_isolated",
                         file_path=file_path or "",
                         reason="Mã độc đã thực thi và có nguy cơ lây lan mạng / C2",
+                        case_id=case_obj["id"],
                     )
                     phase2_action_taken = "keep_isolated"
                 else:
@@ -377,13 +385,16 @@ def run_agent_loop(alert_summary: dict):
                         action="release_isolation",
                         file_path=file_path or "",
                         reason="Tệp độc hại chưa thực thi / không có hành vi lây lan -> Mở cô lập mạng, giữ cách ly file",
+                        case_id=case_obj["id"],
                     )
                     phase2_action_taken = "release_isolation"
 
-            if phase2_action_taken == "keep_isolated":
-                endpoint_response_summary = f"⚡ Phase 1: Cách ly & Cô lập tạm thời Agent {agent_id} -> 🔒 Phase 2: Giữ khóa cô lập mạng"
-            elif phase2_action_taken == "release_isolation":
-                endpoint_response_summary = f"⚡ Phase 1: Cách ly & Cô lập tạm thời Agent {agent_id} -> 🔓 Phase 2: Đã mở cô lập mạng (Vẫn giữ cách ly file)"
+        if phase2_action_taken == "keep_isolated":
+            target_ep = agent_id if valid_agent else "endpoint"
+            endpoint_response_summary = f"⚡ Phase 1: Cách ly & Cô lập tạm thời Agent {target_ep} -> 🔒 Phase 2: Giữ khóa cô lập mạng"
+        elif phase2_action_taken == "release_isolation":
+            target_ep = agent_id if valid_agent else "endpoint"
+            endpoint_response_summary = f"⚡ Phase 1: Cách ly & Cô lập tạm thời Agent {target_ep} -> 🔓 Phase 2: Đã mở cô lập mạng (Vẫn giữ cách ly file)"
 
         # Cập nhật thống kê STATE (QUY TẮC 8)
         if not replay_case_id:

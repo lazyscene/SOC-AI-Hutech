@@ -8,6 +8,7 @@ from web.state import STATE, save_persistent_state
 from tools.firewall_tools import clear_all_pfsense_blocks, tool_unblock_firewall_ip, sync_pfsense_blocklist
 from core.misp_vault import get_ioc_records, add_ioc_record, fetch_open_misp_feeds
 from core.case_manager import (
+    _CASE_LOCK,
     close_expired_cases,
     get_case_by_id,
     update_case_status,
@@ -27,8 +28,11 @@ from core.contingency_room import (
     detach_case_from_room,
     post_room_message,
     create_and_execute_decision,
+    propose_revert_decision,
+    reject_revert_proposal,
     revert_tactical_decision,
     reapply_tactical_decision,
+    reconcile_active_controls_locked,
 )
 
 router = APIRouter()
@@ -46,6 +50,7 @@ def get_state():
         "assets": get_assets_with_case_counts(),
         "contingency_rooms": rooms_overview["rooms"],
         "tactical_decisions": rooms_overview["decisions"],
+        "control_audit_logs": list(STATE.get("control_audit_logs", []))[:100],
         "reasoning_stream": list(STATE["reasoning_stream"]),
         "decisions": list(STATE["decisions"])
     }
@@ -219,10 +224,49 @@ def execute_room_decision(room_id: str, payload: dict):
     }
 
 
+@router.post("/api/decisions/{decision_id}/propose-revert")
+def propose_revert(decision_id: str, payload: dict = Body(default={})):
+    reason = payload.get("reason", "") if isinstance(payload, dict) else ""
+    proposed_by = payload.get("proposed_by", "SOC Operator") if isinstance(payload, dict) else "SOC Operator"
+    room_id = payload.get("room_id", "") if isinstance(payload, dict) else ""
+    ok, res_obj, msg = propose_revert_decision(
+        decision_id,
+        reason=reason,
+        proposed_by=proposed_by,
+        room_id=room_id,
+    )
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "decision": res_obj.get("decision") if isinstance(res_obj, dict) else None,
+        "room": res_obj.get("room") if isinstance(res_obj, dict) else None,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
+    }
+
+
+@router.post("/api/decisions/{decision_id}/reject-proposal")
+def reject_revert(decision_id: str, payload: dict = Body(default={})):
+    reason = payload.get("reason", "") if isinstance(payload, dict) else ""
+    actor = payload.get("actor", "SOC Commander") if isinstance(payload, dict) else "SOC Commander"
+    ok, res_obj, msg = reject_revert_proposal(decision_id, reason=reason, actor=actor)
+    overview = get_contingency_rooms_overview()
+    return {
+        "success": ok,
+        "decision": res_obj.get("decision") if isinstance(res_obj, dict) else None,
+        "room": res_obj.get("room") if isinstance(res_obj, dict) else None,
+        "message": msg,
+        "rooms": overview["rooms"],
+        "decisions": overview["decisions"],
+    }
+
+
 @router.post("/api/decisions/{decision_id}/revert")
 def revert_decision(decision_id: str, payload: dict = Body(default={})):
     reason = payload.get("reason", "") if isinstance(payload, dict) else ""
-    ok, res_obj, msg = revert_tactical_decision(decision_id, reason=reason)
+    actor = payload.get("actor", "SOC Commander") if isinstance(payload, dict) else "SOC Commander"
+    ok, res_obj, msg = revert_tactical_decision(decision_id, reason=reason, actor=actor)
     overview = get_contingency_rooms_overview()
     return {
         "success": ok,
@@ -270,9 +314,11 @@ def simulate_attack():
 @router.post("/api/clear-blocklist")
 def clear_blocklist():
     success, msg = clear_all_pfsense_blocks()
-    STATE["stats"]["endpoint_actions"] = []
-    STATE["endpoint_containment"] = {}
-    save_persistent_state()
+    with _CASE_LOCK:
+        STATE["stats"]["endpoint_actions"] = []
+        STATE["endpoint_containment"] = {}
+        reconcile_active_controls_locked()
+        save_persistent_state()
     return {"success": success, "message": msg}
 
 @router.post("/api/pfsense/sync")

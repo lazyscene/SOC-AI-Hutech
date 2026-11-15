@@ -5,7 +5,7 @@ from typing import Optional, List, Tuple, Dict, Any
 import requests
 import urllib3
 from tools.base import register_tool
-from web.state import STATE, log_event, save_persistent_state
+from web.state import STATE, log_event, save_persistent_state, format_vn_time
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -160,6 +160,35 @@ def _upsert_endpoint_action_badge(agent_id: str, summary_text: str):
     STATE["stats"]["endpoint_actions"].append(summary_text)
 
 
+def _merge_containment_case_metadata(
+    record: Dict[str, Any],
+    case_id: str = "",
+    existing: Optional[Dict[str, Any]] = None,
+    replace_source_if_provided: bool = True,
+) -> None:
+    """Attach canonical source_case_id and deduplicated case_ids to an endpoint_containment record."""
+    prev = existing if isinstance(existing, dict) else {}
+    clean_case_id = str(case_id or "").strip()
+    case_ids: List[str] = []
+    for raw_cid in prev.get("case_ids") or []:
+        cid = str(raw_cid or "").strip()
+        if cid and cid not in case_ids:
+            case_ids.append(cid)
+    prev_source = str(prev.get("source_case_id") or "").strip()
+    if prev_source and prev_source not in case_ids:
+        case_ids.append(prev_source)
+    if clean_case_id:
+        if clean_case_id not in case_ids:
+            case_ids.append(clean_case_id)
+        if replace_source_if_provided or not prev_source:
+            record["source_case_id"] = clean_case_id
+        else:
+            record["source_case_id"] = prev_source
+    else:
+        record["source_case_id"] = prev_source
+    record["case_ids"] = case_ids
+
+
 def execute_phase1_fast_containment(
     agent_id: str,
     agent_name: str = "endpoint",
@@ -168,6 +197,7 @@ def execute_phase1_fast_containment(
     process_name: Optional[str] = None,
     process_id: Optional[str] = None,
     reason: str = "Phát hiện mối đe dọa trên Endpoint",
+    case_id: str = "",
 ) -> Dict[str, Any]:
     """
     GIAI ĐOẠN 1 (Fast Containment):
@@ -208,7 +238,8 @@ def execute_phase1_fast_containment(
     ok_iso, msg_iso = dispatch_wazuh_ar(clean_agent, "!isolate-endpoint", ["temp-isolate", victim_ip or clean_agent])
     ar_logs.append(msg_iso)
 
-    now_str = datetime.now().strftime("%H:%M:%S")
+    now_ts = time.time()
+    now_str = format_vn_time(now_ts)
     existing = STATE.setdefault("endpoint_containment", {}).get(clean_agent, {})
     q_files = list(existing.get("quarantined_files", []))
     if quarantined_target and quarantined_target not in q_files:
@@ -231,8 +262,10 @@ def execute_phase1_fast_containment(
         "killed_processes": killed_procs,
         "reason": reason,
         "updated_at": now_str,
+        "updated_at_ts": now_ts,
         "ar_logs": ar_logs,
     }
+    _merge_containment_case_metadata(containment_state, case_id, existing, replace_source_if_provided=True)
     STATE["endpoint_containment"][clean_agent] = containment_state
 
     _upsert_endpoint_action_badge(
@@ -288,6 +321,7 @@ def tool_wazuh_endpoint_response(
     action: str,
     file_path: str = "",
     reason: str = "Post-investigation adaptive containment",
+    case_id: str = "",
 ):
     """
     GIAI ĐOẠN 2 (Post-Investigation Decision):
@@ -301,7 +335,8 @@ def tool_wazuh_endpoint_response(
 
     clean_agent = clean_agent_or_err
     act = (action or "").strip().lower()
-    now_str = datetime.now().strftime("%H:%M:%S")
+    now_ts = time.time()
+    now_str = format_vn_time(now_ts)
     containment_map = STATE.setdefault("endpoint_containment", {})
     record = containment_map.get(clean_agent, {
         "agent_id": clean_agent,
@@ -323,6 +358,7 @@ def tool_wazuh_endpoint_response(
             agent_id=clean_agent,
             file_path=target_file or None,
             reason=reason,
+            case_id=case_id,
         )
         return f"[Wazuh AR] Đã kích hoạt Fast Containment Giai đoạn 1 cho Agent {clean_agent}: {res}"
 
@@ -332,6 +368,8 @@ def tool_wazuh_endpoint_response(
         record["isolation_status"] = "UNISOLATED (FILE QUARANTINED)"
         record["reason"] = reason
         record["updated_at"] = now_str
+        record["updated_at_ts"] = now_ts
+        _merge_containment_case_metadata(record, case_id, record, replace_source_if_provided=False)
         containment_map[clean_agent] = record
 
         _upsert_endpoint_action_badge(
@@ -355,6 +393,8 @@ def tool_wazuh_endpoint_response(
         record["isolation_status"] = "ISOLATED (LOCKED)"
         record["reason"] = reason
         record["updated_at"] = now_str
+        record["updated_at_ts"] = now_ts
+        _merge_containment_case_metadata(record, case_id, record, replace_source_if_provided=True)
         containment_map[clean_agent] = record
 
         _upsert_endpoint_action_badge(

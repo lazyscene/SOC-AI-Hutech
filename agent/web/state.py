@@ -43,6 +43,7 @@ STATE = {
     "dismissed_asset_agents": [],
     "contingency_rooms": [],
     "tactical_decisions": [],
+    "control_audit_logs": [],
     "reasoning_stream": deque(maxlen=50),
     "decisions": deque(maxlen=30)
 }
@@ -78,6 +79,7 @@ def save_persistent_state(state_file: Optional[str] = None) -> bool:
                 "dismissed_asset_agents": list(STATE.get("dismissed_asset_agents", [])),
                 "contingency_rooms": list(STATE.get("contingency_rooms", [])),
                 "tactical_decisions": list(STATE.get("tactical_decisions", [])),
+                "control_audit_logs": list(STATE.get("control_audit_logs", [])),
                 "decisions": list(STATE.get("decisions", [])),
                 "reasoning_stream": list(STATE.get("reasoning_stream", [])),
                 "saved_at": format_vn_time(fmt="%Y-%m-%d %H:%M:%S"),
@@ -208,8 +210,14 @@ def load_persistent_state(state_file: Optional[str] = None) -> bool:
                         d_copy["created_at"] = format_vn_time(d_copy["created_at_ts"])
                     if d_copy.get("reverted_at_ts"):
                         d_copy["reverted_at"] = format_vn_time(d_copy["reverted_at_ts"])
+                    if d_copy.get("expires_at_ts"):
+                        d_copy["expires_at"] = format_vn_time(d_copy["expires_at_ts"])
                     restored_decs.append(d_copy)
                 STATE["tactical_decisions"] = restored_decs
+            if isinstance(data.get("control_audit_logs"), list):
+                STATE["control_audit_logs"] = [
+                    dict(x) for x in data["control_audit_logs"][:500] if isinstance(x, dict)
+                ]
 
             if isinstance(data.get("decisions"), list):
                 STATE["decisions"] = deque(data["decisions"][:30], maxlen=30)

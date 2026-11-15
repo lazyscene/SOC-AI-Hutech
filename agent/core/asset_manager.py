@@ -198,22 +198,58 @@ def _enrich_asset_record(
     cases: List[Dict[str, Any]],
     nat_map: Dict[str, List[str]],
     ep_containment: Dict[str, Any],
+    decisions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Bổ sung bộ đếm Case động (case_count, open_case_count, case_ids) cho một bản ghi thiết bị."""
+    """Bổ sung bộ đếm Case động (case_count, open_case_count, case_ids) và Active Control metadata cho một bản ghi thiết bị."""
     matched_cases = [c for c in cases if isinstance(c, dict) and _does_case_match_asset(c, asset, nat_map)]
     case_ids = [str(c.get("id")) for c in matched_cases if c.get("id")]
     open_case_count = sum(1 for c in matched_cases if c.get("status") != "CLOSED")
 
+    all_ips = _collect_asset_ips(asset)
+    all_ip_set = set(all_ips)
     agent_id = str(asset.get("agent_id") or "").strip()
     ep_rec = ep_containment.get(agent_id) if agent_id and isinstance(ep_containment, dict) else None
     containment_status = ep_rec.get("isolation_status") if isinstance(ep_rec, dict) else None
+
+    active_control = None
+    matched_dec = None
+    for d in (decisions or []):
+        if not isinstance(d, dict) or d.get("status") != "ACTIVE":
+            continue
+        act = str(d.get("action_type") or "").upper()
+        tgt = str(d.get("target") or "").strip()
+        if act == "ISOLATE_ENDPOINT" and agent_id and tgt == agent_id:
+            matched_dec = d
+            break
+    if not matched_dec:
+        for d in (decisions or []):
+            if not isinstance(d, dict) or d.get("status") != "ACTIVE":
+                continue
+            act = str(d.get("action_type") or "").upper()
+            tgt = str(d.get("target") or "").strip()
+            if act == "BLOCK_IP" and tgt and tgt in all_ip_set:
+                matched_dec = d
+                break
+
+    if matched_dec:
+        active_control = {
+            "decision_id": matched_dec.get("id", ""),
+            "control_key": matched_dec.get("control_key", ""),
+            "action_type": matched_dec.get("action_type", ""),
+            "source_case_id": matched_dec.get("source_case_id", "") or matched_dec.get("case_id", ""),
+            "source_label": matched_dec.get("source_label", ""),
+            "is_orphan": bool(matched_dec.get("is_orphan")),
+            "control_cases": list(matched_dec.get("control_cases") or []),
+            "expires_at": matched_dec.get("expires_at"),
+            "room_id": matched_dec.get("room_id", ""),
+        }
 
     return {
         "id": asset.get("id", ""),
         "name": asset.get("name", ""),
         "ip": asset.get("ip", ""),
         "extra_ips": list(asset.get("extra_ips", [])),
-        "all_ips": _collect_asset_ips(asset),
+        "all_ips": all_ips,
         "agent_id": agent_id,
         "labels": list(asset.get("labels", [])),
         "owner": asset.get("owner", ""),
@@ -221,6 +257,7 @@ def _enrich_asset_record(
         "open_case_count": open_case_count,
         "case_ids": case_ids,
         "containment_status": containment_status,
+        "active_control": active_control,
     }
 
 
@@ -231,8 +268,9 @@ def get_assets_with_case_counts() -> List[Dict[str, Any]]:
         cases = list(STATE.get("cases", []))
         nat_map = get_nat_ip_map()
         ep_containment = STATE.get("endpoint_containment", {})
+        decisions = list(STATE.get("tactical_decisions", []))
         return [
-            _enrich_asset_record(asset, cases, nat_map, ep_containment)
+            _enrich_asset_record(asset, cases, nat_map, ep_containment, decisions=decisions)
             for asset in assets
             if isinstance(asset, dict)
         ]

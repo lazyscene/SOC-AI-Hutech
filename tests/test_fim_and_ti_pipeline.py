@@ -42,6 +42,8 @@ from core.contingency_room import (
     detach_case_from_room,
     post_room_message,
     create_and_execute_decision,
+    propose_revert_decision,
+    reject_revert_proposal,
     revert_tactical_decision,
     reapply_tactical_decision,
     get_contingency_rooms_overview,
@@ -309,6 +311,7 @@ class TestFimAndTiIntegration(unittest.TestCase):
         STATE["dismissed_asset_agents"] = []
         STATE["contingency_rooms"] = []
         STATE["tactical_decisions"] = []
+        STATE["control_audit_logs"] = []
         STATE.pop("_rooms_initialized", None)
 
     @patch("core.controller.call_ollama")
@@ -669,6 +672,7 @@ class TestCaseManagement(unittest.TestCase):
         STATE["dismissed_asset_agents"] = []
         STATE["contingency_rooms"] = []
         STATE["tactical_decisions"] = []
+        STATE["control_audit_logs"] = []
         STATE.pop("_rooms_initialized", None)
 
     @patch("core.controller.call_ollama")
@@ -1486,6 +1490,235 @@ class TestCaseManagement(unittest.TestCase):
         ok_del, _ = delete_contingency_room("ROOM-0002")
         self.assertTrue(ok_del)
         self.assertEqual(len(get_contingency_rooms_overview()["rooms"]), 1)
+
+    def test_active_controls_dedup_orphan_drift_and_multi_case_room_surface(self):
+        """Khử trùng legacy RELEASE_ENDPOINT, phát hiện Orphan Isolation trên Agent 002, tự liên kết Case mới vào Room & phát hiện Drift"""
+        ensure_default_rooms()
+        ensure_default_assets()
+
+        # 1. Tạo legacy duplicate RELEASE_ENDPOINT cũ (giống DEC-0002..0006 bị kẹt trước đây)
+        c_old = ingest_alert_into_case({
+            "source": "Wazuh FIM",
+            "level": 10,
+            "title": "Old FIM Alert on 002",
+            "agent_id": "002",
+            "agent_name": "ubuntu-web",
+            "victim_ip": "192.168.214.10",
+            "file_path": "/tmp/old.txt",
+        })["case"]
+        finalize_case_analysis(c_old["id"], verdict="FALSE POSITIVE", summary_text="Old test")
+        STATE["tactical_decisions"] = [
+            {
+                "id": "DEC-0002",
+                "room_id": "",
+                "case_id": c_old["id"],
+                "action_type": "RELEASE_ENDPOINT",
+                "target": "002",
+                "title": "Old Release 1",
+                "status": "ACTIVE",
+                "created_at_ts": 100.0,
+            },
+            {
+                "id": "DEC-0003",
+                "room_id": "",
+                "case_id": c_old["id"],
+                "action_type": "RELEASE_ENDPOINT",
+                "target": "002",
+                "title": "Old Release 2",
+                "status": "ACTIVE",
+                "created_at_ts": 200.0,
+            },
+        ]
+
+        # 2. Thực tế hạ tầng đang ISOLATED (LOCKED) không có source_case_id (Orphan)
+        STATE["endpoint_containment"]["002"] = {
+            "agent_id": "002",
+            "agent_name": "ubuntu-web",
+            "victim_ip": "192.168.214.10",
+            "phase": "PHASE_2_COMPLETED",
+            "isolation_status": "ISOLATED (LOCKED)",
+            "reason": "Khóa cô lập chưa rõ nguồn",
+            "updated_at": "10:05:31",
+            "updated_at_ts": time.time(),
+        }
+
+        # 3. Kéo Case tấn công mạng mới (Kali 192.168.63.140 -> 192.168.214.10) vào ROOM-0001
+        c_net = ingest_alert_into_case({
+            "source": "Suricata NIDS",
+            "level": 10,
+            "title": "Kali Attack on Linux Web Server",
+            "src_ip": "192.168.63.140",
+            "victim_ip": "192.168.214.10",
+            "dest_ip": "192.168.214.10",
+        })["case"]
+        finalize_case_analysis(c_net["id"], verdict="SUSPICIOUS", summary_text="Network scan against .214.10")
+        ok_att, _, _ = attach_case_to_room("ROOM-0001", c_net["id"])
+        self.assertTrue(ok_att)
+
+        overview = get_contingency_rooms_overview()
+        active_ep = [d for d in overview["decisions"] if d.get("control_key") == "ENDPOINT_ISOLATION:002" and d.get("status") == "ACTIVE"]
+        self.assertEqual(len(active_ep), 1)
+        ep_dec = active_ep[0]
+        self.assertEqual(ep_dec["action_type"], "ISOLATE_ENDPOINT")
+        self.assertTrue(ep_dec["is_orphan"])
+        self.assertIn("Nguồn không xác định", ep_dec["source_label"])
+        self.assertIn(c_net["id"], ep_dec["control_cases"])
+
+        room1 = next(r for r in overview["rooms"] if r["id"] == "ROOM-0001")
+        self.assertTrue(any(d["id"] == ep_dec["id"] for d in room1["room_decisions"]))
+
+        # Kiểm tra Asset Manager có active_control link tới Decision
+        assets = get_assets_with_case_counts()
+        ep_asset = next(a for a in assets if a.get("agent_id") == "002")
+        self.assertIsNotNone(ep_asset.get("active_control"))
+        self.assertEqual(ep_asset["active_control"]["decision_id"], ep_dec["id"])
+
+        # 4. Drift Reconciliation: hạ tầng tự chuyển UNISOLATED bên ngoài -> Decision chuyển REVERTED
+        STATE["endpoint_containment"]["002"]["isolation_status"] = "UNISOLATED (FILE QUARANTINED)"
+        overview_after = get_contingency_rooms_overview()
+        ep_after = next(d for d in overview_after["decisions"] if d["id"] == ep_dec["id"])
+        self.assertEqual(ep_after["status"], "REVERTED")
+        self.assertEqual(ep_after["drift_status"], "DRIFT_UNISOLATED")
+
+    def test_ai_revert_proposal_safety_gate_mandatory_reason_idempotency_and_ttl(self):
+        """AI chỉ tạo pending_revert_proposal (không tự mở khóa); Revert cần lý do bắt buộc, idempotent, ghi timeline đa Case & TTL tự hết hạn"""
+        from tools.wazuh_tools import tool_wazuh_endpoint_response
+
+        ensure_default_rooms()
+        ensure_default_assets()
+
+        with patch("tools.wazuh_tools.dispatch_wazuh_ar", return_value=(True, "Wazuh AR OK")), \
+             patch("tools.firewall_tools.tool_block_firewall_ip", return_value="Blocked OK"), \
+             patch("tools.firewall_tools.tool_unblock_firewall_ip", return_value="Unblocked OK"):
+            c_ep = ingest_alert_into_case({
+                "source": "Wazuh EDR",
+                "level": 12,
+                "title": "Backdoor on 002",
+                "agent_id": "002",
+                "agent_name": "ubuntu-web",
+                "victim_ip": "192.168.214.10",
+            })["case"]
+            tool_wazuh_endpoint_response(agent_id="002", action="keep_isolated", reason="Reverse shell", case_id=c_ep["id"])
+            finalize_case_analysis(c_ep["id"], verdict="TRUE POSITIVE", summary_text="Isolated 002", endpoint_response="Phase 2: Giữ khóa cô lập mạng")
+
+            c_net = ingest_alert_into_case({
+                "source": "Suricata NIDS",
+                "level": 10,
+                "title": "Lateral attack hitting 192.168.214.10",
+                "src_ip": "192.168.63.145",
+                "victim_ip": "192.168.214.10",
+                "dest_ip": "192.168.214.10",
+            })["case"]
+            finalize_case_analysis(c_net["id"], verdict="SUSPICIOUS", summary_text="Hitting 214.10")
+            attach_case_to_room("ROOM-0001", c_net["id"])
+
+            # Idempotent reuse: gọi tạo lại ISOLATE_ENDPOINT cho 002 không sinh bản ghi trùng
+            dec_before = next(d for d in STATE["tactical_decisions"] if d.get("control_key") == "ENDPOINT_ISOLATION:002" and d["status"] == "ACTIVE")
+            ok_reuse, reuse_res, _ = create_and_execute_decision("ROOM-0001", {
+                "action_type": "ISOLATE_ENDPOINT",
+                "target": "002",
+                "case_id": c_net["id"],
+                "reason": "Gia hạn kiểm soát",
+                "ttl_seconds": 7200,
+            })
+            self.assertTrue(ok_reuse)
+            self.assertEqual(reuse_res["decision"]["id"], dec_before["id"])
+            self.assertEqual(
+                len([d for d in STATE["tactical_decisions"] if d.get("control_key") == "ENDPOINT_ISOLATION:002" and d["status"] == "ACTIVE"]),
+                1,
+            )
+
+            # AI gọi tool_room_revert_decision -> CHỈ tạo pending_revert_proposal, KHÔNG tự mở khóa
+            captured_sys = []
+
+            def fake_ai_turn(messages, tools=None, **kwargs):
+                if messages and messages[0].get("role") == "system":
+                    captured_sys.append(messages[0]["content"])
+                if not any(m.get("role") == "tool" for m in messages):
+                    return {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [{
+                                "function": {
+                                    "name": "tool_room_revert_decision",
+                                    "arguments": {
+                                        "decision_id": "ENDPOINT_ISOLATION:002",
+                                        "reason": "AI đề xuất mở cô lập sau rà soát",
+                                    },
+                                }
+                            }],
+                        }
+                    }
+                return {"message": {"role": "assistant", "content": f"Đã tạo đề xuất chờ duyệt cho {dec_before['id']}."}}
+
+            with patch("core.contingency_room.call_ollama", side_effect=fake_ai_turn):
+                ok_msg, _, _ = post_room_message("ROOM-0001", {
+                    "sender": "SOC Commander",
+                    "text": "@ai kiểm tra isolation của 002 và đề xuất gỡ",
+                    "case_id": c_net["id"],
+                    "ask_ai": True,
+                    "async_ai": False,
+                })
+                self.assertTrue(ok_msg)
+
+            self.assertTrue(captured_sys)
+            self.assertIn("ENDPOINT_ISOLATION:002", captured_sys[0])
+            self.assertIn(c_ep["id"], captured_sys[0])
+            self.assertIn(c_net["id"], captured_sys[0])
+
+            # Agent 002 vẫn đang ISOLATED (LOCKED) và có pending_revert_proposal
+            self.assertEqual(STATE["endpoint_containment"]["002"]["isolation_status"], "ISOLATED (LOCKED)")
+            live_dec = next(d for d in STATE["tactical_decisions"] if d["id"] == dec_before["id"])
+            self.assertEqual(live_dec["status"], "ACTIVE")
+            self.assertIsNotNone(live_dec.get("pending_revert_proposal"))
+            self.assertIn(c_ep["id"], live_dec["control_cases"])
+            self.assertIn(c_net["id"], live_dec["control_cases"])
+
+            # Từ chối đề xuất -> xóa proposal, giữ control ACTIVE
+            ok_rej, rej_res, _ = reject_revert_proposal(live_dec["id"], reason="Chưa đủ điều kiện mở khóa")
+            self.assertTrue(ok_rej)
+            self.assertIsNone(rej_res["decision"].get("pending_revert_proposal"))
+            self.assertEqual(STATE["endpoint_containment"]["002"]["isolation_status"], "ISOLATED (LOCKED)")
+
+            # Revert thiếu lý do -> từ chối
+            ok_empty, _, msg_empty = revert_tactical_decision(live_dec["id"], reason="   ")
+            self.assertFalse(ok_empty)
+            self.assertIn("Bắt buộc", msg_empty)
+
+            # Con người xác nhận revert kèm lý do -> mở khóa, ghi audit log & timeline cả 2 Case
+            ok_rev, rev_res, _ = revert_tactical_decision(live_dec["id"], reason="Xác minh máy chủ Linux an toàn", actor="Commander")
+            self.assertTrue(ok_rev)
+            self.assertEqual(rev_res["decision"]["status"], "REVERTED")
+            self.assertEqual(STATE["endpoint_containment"]["002"]["isolation_status"], "UNISOLATED (FILE QUARANTINED)")
+            self.assertTrue(any(e.get("decision_id") == live_dec["id"] and e.get("action") == "CONTROL_REVERTED" for e in c_ep.get("control_events", [])))
+            self.assertTrue(any(e.get("decision_id") == live_dec["id"] and e.get("action") == "CONTROL_REVERTED" for e in c_net.get("control_events", [])))
+
+            # Gọi revert lần 2 -> Idempotent No-Op
+            ok_idem, _, msg_idem = revert_tactical_decision(live_dec["id"], reason="Nhấn trùng")
+            self.assertTrue(ok_idem)
+            self.assertIn("Idempotent", msg_idem)
+
+            # TTL Auto-Expiration -> BLOCK_IP hết hạn tự động unblock & REVERTED
+            ok_blk, blk_res, _ = create_and_execute_decision("ROOM-0001", {
+                "action_type": "BLOCK_IP",
+                "target": "192.168.63.249",
+                "reason": "Chặn tạm 60s",
+                "ttl_seconds": 60,
+            })
+            self.assertTrue(ok_blk)
+            blk_id = blk_res["decision"]["id"]
+            self.assertIn("192.168.63.249", STATE["stats"]["blocked_ips"])
+            target_blk = next(d for d in STATE["tactical_decisions"] if d["id"] == blk_id)
+            target_blk["expires_at_ts"] = time.time() - 5.0
+
+            ov_ttl = get_contingency_rooms_overview()
+            blk_after = next(d for d in ov_ttl["decisions"] if d["id"] == blk_id)
+            self.assertEqual(blk_after["status"], "REVERTED")
+            self.assertTrue(blk_after.get("expired"))
+            self.assertEqual(blk_after.get("reverted_by"), "ttl-scheduler")
+            self.assertNotIn("192.168.63.249", STATE["stats"]["blocked_ips"])
+            self.assertTrue(any(a["action"] == "CONTROL_EXPIRED" and a["decision_id"] == blk_id for a in STATE["control_audit_logs"]))
 
 
 if __name__ == "__main__":

@@ -85,6 +85,17 @@ function renderAssetsFromCache(force = false) {
         const containmentBadge = a.containment_status
             ? `<div class="mt-1 inline-block px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">🛡️ ${escapeHtml(a.containment_status)}</div>`
             : '';
+        const ac = a.active_control;
+        let activeControlLinksHtml = '';
+        if (ac && ac.decision_id) {
+            const originLink = ac.source_case_id
+                ? `<button onclick="openCaseFromAsset('${escapeHtml(ac.source_case_id)}')" class="px-1.5 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 font-mono text-[10px] transition">[${escapeHtml(ac.source_case_id)}]</button>`
+                : (ac.is_orphan
+                    ? `<span class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30 font-mono text-[10px]">⚠️ Nguồn không xác định</span>`
+                    : '');
+            const decJumpBtn = `<button onclick="openDecisionInRoom('${escapeHtml(ac.decision_id)}', '${escapeHtml(ac.room_id || '')}', '${escapeHtml(ac.source_case_id || '')}')" class="px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/35 font-mono text-[10px] font-semibold transition">🔗 Xem Decision (${escapeHtml(ac.decision_id)}) trong Room</button>`;
+            activeControlLinksHtml = `<div class="flex flex-wrap items-center gap-1 mt-1">${originLink}${decJumpBtn}</div>`;
+        }
 
         const caseCount = Number(a.case_count || 0);
         const openCount = Number(a.open_case_count || 0);
@@ -105,6 +116,7 @@ function renderAssetsFromCache(force = false) {
                     <div class="font-bold text-foreground">${escapeHtml(a.name)}</div>
                     <div class="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">${escapeHtml(a.id)}</div>
                     ${containmentBadge}
+                    ${activeControlLinksHtml}
                 </td>
                 <td class="p-3 font-mono text-foreground">
                     <div>${escapeHtml(ipsList)}</div>

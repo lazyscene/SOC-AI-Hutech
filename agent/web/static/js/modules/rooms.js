@@ -1,5 +1,30 @@
 // ================= CONTINGENCY ROOM MODULE (WAR ROOM + STREAM + DECISIONS) =================
 
+let highlightedDecisionId = '';
+let pendingRevertDecisionId = '';
+
+function openDecisionInRoom(decisionId, roomId = '', caseId = '') {
+    const rooms = cachedRoomsData || [];
+    let targetRoom = roomId ? rooms.find(r => r.id === roomId) : null;
+    if (!targetRoom) {
+        targetRoom = rooms.find(r => (r.room_decisions || []).some(d => d.id === decisionId));
+    }
+    if (!targetRoom && caseId) {
+        targetRoom = rooms.find(r => (r.case_ids || []).includes(caseId));
+    }
+    if (targetRoom) selectedRoomId = targetRoom.id;
+    highlightedDecisionId = decisionId || '';
+    switchView('rooms');
+    setRoomSubTab('decisions');
+    renderContingencyRoomsFromCache(true);
+    setTimeout(() => {
+        const el = document.getElementById(`decision-card-${decisionId}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 80);
+}
+
 function setRoomSubTab(tab) {
     if (!['all', 'board', 'stream', 'decisions', 'cases'].includes(tab)) tab = 'all';
     activeRoomSubTab = tab;
@@ -328,6 +353,8 @@ async function submitNewDecision(e) {
     const action_type = document.getElementById('dec-action-type')?.value || 'BLOCK_IP';
     const target = (document.getElementById('dec-target')?.value || '').trim();
     const reason = (document.getElementById('dec-reason')?.value || '').trim();
+    const ttlEl = document.getElementById('dec-ttl-seconds');
+    const ttl_seconds = ttlEl ? Number(ttlEl.value) : 3600;
     if (!target) {
         alert('Vui lòng nhập mục tiêu thực thi.');
         return;
@@ -336,7 +363,7 @@ async function submitNewDecision(e) {
         const res = await fetch(`/api/rooms/${encodeURIComponent(selectedRoomId)}/decisions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ case_id, action_type, target, reason })
+            body: JSON.stringify({ case_id, action_type, target, reason, ttl_seconds })
         });
         const data = await res.json();
         if (data.success) {
@@ -353,14 +380,129 @@ async function submitNewDecision(e) {
     }
 }
 
-async function revertDecisionItem(decisionId) {
-    const reason = prompt(`Nhập lý do đảo ngược quyết định ${decisionId}:`, 'Hoàn tác từ Contingency Room');
-    if (reason === null) return;
+function _findDecisionInCache(decisionId) {
+    const activeRoom = (cachedRoomsData || []).find(r => r.id === selectedRoomId);
+    const inRoom = (activeRoom?.room_decisions || []).find(d => d.id === decisionId);
+    if (inRoom) return inRoom;
+    return (cachedTacticalDecisions || []).find(d => d.id === decisionId) || null;
+}
+
+function revertDecisionItem(decisionId, prefillReason = '') {
+    const dec = _findDecisionInCache(decisionId);
+    const modal = document.getElementById('modal-confirm-revert');
+    if (!modal || !dec) {
+        alert('❌ Không tìm thấy thông tin Decision để xác nhận.');
+        return;
+    }
+    pendingRevertDecisionId = decisionId;
+    document.getElementById('revert-modal-decision-id').value = decisionId;
+
+    const metaEl = document.getElementById('revert-modal-header-meta');
+    if (metaEl) {
+        metaEl.textContent = `${dec.id} · ${dec.control_key || dec.action_type} · Mục tiêu: ${dec.target}`;
+    }
+
+    const originEl = document.getElementById('revert-modal-origin');
+    if (originEl) {
+        const srcText = dec.source_label || (dec.source_case_id ? `Khởi phát từ ${dec.source_case_id}` : 'Không xác định');
+        originEl.innerHTML = `<div class="font-semibold text-foreground mb-0.5">Nguồn gốc Control:</div>`
+            + `<div class="font-mono text-[11px] ${dec.is_orphan ? 'text-rose-600 dark:text-rose-300 font-semibold' : 'text-cyan-700 dark:text-cyan-300'}">${escapeHtml(srcText)}</div>`;
+    }
+
+    const impactEl = document.getElementById('revert-modal-impact-banner');
+    if (impactEl) {
+        const details = dec.control_cases_detail || [];
+        const rawIds = dec.control_cases || (dec.case_id ? [dec.case_id] : []);
+        const count = details.length || rawIds.length;
+        let warnTitle = '⚠️ Kiểm tra tác động trước khi mở khóa / gỡ chặn:';
+        if (count > 1) {
+            warnTitle = `🚨 CẢNH BÁO ĐA CASE (${count} CASES): Gỡ bỏ control này sẽ ảnh hưởng đồng thời tới nhiều hồ sơ đang liên kết!`;
+        } else if (dec.is_orphan) {
+            warnTitle = '⚠️ CẢNH BÁO ORPHAN CONTROL: Control này có nguồn khởi phát không xác định. Hãy chắc chắn bạn hiểu tác động thực tế trước khi gỡ.';
+        }
+        const chipsHtml = details.length > 0
+            ? details.map(c => `<div class="flex items-center justify-between gap-2 px-2 py-1 rounded bg-card/80 border border-border text-[11px] font-mono">
+                <span><b class="text-cyan-700 dark:text-cyan-300">${escapeHtml(c.case_id)}</b> <span class="text-[10px] px-1 rounded ${c.role === 'SOURCE' ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300' : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'}">${escapeHtml(c.role)}</span> · ${escapeHtml(c.title || '')}</span>
+                <span class="shrink-0 text-[10px] text-muted-foreground">${escapeHtml(c.status)} / ${escapeHtml(c.verdict)}</span>
+            </div>`).join('')
+            : (rawIds.length > 0
+                ? `<div class="font-mono text-[11px]">${rawIds.map(escapeHtml).join(', ')}</div>`
+                : '<div class="text-[11px] text-muted-foreground">Không có Case nào được liên kết trực tiếp.</div>');
+        impactEl.innerHTML = `<div class="font-bold text-amber-700 dark:text-amber-300">${escapeHtml(warnTitle)}</div>${chipsHtml}`;
+    }
+
+    const reasonInput = document.getElementById('revert-confirm-reason');
+    const errEl = document.getElementById('revert-confirm-error');
+    if (errEl) {
+        errEl.classList.add('hidden');
+        errEl.textContent = '';
+    }
+    if (reasonInput) {
+        reasonInput.value = prefillReason || (dec.pending_revert_proposal?.reason || '');
+    }
+    modal.classList.remove('hidden');
+    setTimeout(() => reasonInput?.focus(), 40);
+}
+
+function closeRevertConfirmModal() {
+    const modal = document.getElementById('modal-confirm-revert');
+    if (modal) modal.classList.add('hidden');
+    pendingRevertDecisionId = '';
+}
+
+async function confirmRevertModalSubmit(e) {
+    e.preventDefault();
+    const decisionId = document.getElementById('revert-modal-decision-id')?.value || pendingRevertDecisionId;
+    const reason = (document.getElementById('revert-confirm-reason')?.value || '').trim();
+    const errEl = document.getElementById('revert-confirm-error');
+    if (!reason) {
+        if (errEl) {
+            errEl.textContent = 'Vui lòng nhập lý do đảo ngược (bắt buộc để ghi Audit Log).';
+            errEl.classList.remove('hidden');
+        }
+        return;
+    }
+    const submitBtn = document.getElementById('btn-confirm-revert-submit');
+    if (submitBtn) submitBtn.disabled = true;
     try {
         const res = await fetch(`/api/decisions/${encodeURIComponent(decisionId)}/revert`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason })
+            body: JSON.stringify({ reason, actor: 'SOC Commander' })
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeRevertConfirmModal();
+            cachedRoomsData = data.rooms || cachedRoomsData;
+            cachedTacticalDecisions = data.decisions || cachedTacticalDecisions;
+            renderContingencyRoomsFromCache(true);
+            await refresh();
+        } else {
+            if (errEl) {
+                errEl.textContent = '❌ ' + (data.message || 'Không thể đảo ngược quyết định.');
+                errEl.classList.remove('hidden');
+            } else {
+                alert('❌ ' + (data.message || 'Không thể đảo ngược quyết định.'));
+            }
+        }
+    } catch (err) {
+        if (errEl) {
+            errEl.textContent = '❌ Lỗi đảo ngược Decision: ' + err;
+            errEl.classList.remove('hidden');
+        } else {
+            alert('❌ Lỗi đảo ngược Decision: ' + err);
+        }
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
+async function rejectRevertProposal(decisionId) {
+    try {
+        const res = await fetch(`/api/decisions/${encodeURIComponent(decisionId)}/reject-proposal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: 'Người vận hành giữ nguyên Active Control', actor: 'SOC Commander' })
         });
         const data = await res.json();
         if (data.success) {
@@ -369,10 +511,10 @@ async function revertDecisionItem(decisionId) {
             renderContingencyRoomsFromCache(true);
             await refresh();
         } else {
-            alert('❌ ' + (data.message || 'Không thể đảo ngược quyết định.'));
+            alert('❌ ' + (data.message || 'Không thể từ chối đề xuất.'));
         }
     } catch (err) {
-        alert('❌ Lỗi đảo ngược Decision: ' + err);
+        alert('❌ Lỗi từ chối đề xuất: ' + err);
     }
 }
 
@@ -410,6 +552,7 @@ function renderContingencyRoomsFromCache(force = false) {
 
     const sig = JSON.stringify({
         sel: selectedRoomId,
+        hl: highlightedDecisionId,
         sq: roomStreamSearch,
         lanes: roomStreamLanes,
         rooms: rooms.map(r => ({
@@ -422,7 +565,7 @@ function renderContingencyRoomsFromCache(force = false) {
             cids: r.case_ids,
             mcnt: (r.messages || []).length,
             board: r.board,
-            decs: (r.room_decisions || []).map(d => `${d.id}:${d.status}:${d.reverted_at}`),
+            decs: (r.room_decisions || []).map(d => `${d.id}:${d.status}:${d.reverted_at}:${(d.control_cases || []).join(',')}:${d.expires_at || ''}:${d.pending_revert_proposal ? 'P' : ''}`),
         })),
         cases: allCases.map(c => `${c.id}:${c.status}:${c.verdict}:${c.alert_count}:${c.severity}`)
     });
@@ -679,34 +822,86 @@ function renderContingencyRoomsFromCache(force = false) {
     if (decSummaryEl) {
         const actCnt = roomDecs.filter(d => d.status === 'ACTIVE').length;
         const revCnt = roomDecs.filter(d => d.status === 'REVERTED').length;
-        decSummaryEl.innerText = `${actCnt} Active | ${revCnt} Reverted`;
+        const propCnt = roomDecs.filter(d => d.status === 'ACTIVE' && d.pending_revert_proposal).length;
+        decSummaryEl.innerText = propCnt > 0
+            ? `${actCnt} Active | ${propCnt} Chờ duyệt | ${revCnt} Reverted`
+            : `${actCnt} Active | ${revCnt} Reverted`;
     }
     if (decsEl) {
         decsEl.innerHTML = roomDecs.length === 0
             ? '<div class="text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">Chưa có Decision nào trong Room này. Các hành động SOAR hoặc quyết định thủ công sẽ hiện tại đây kèm nút Đảo ngược.</div>'
             : roomDecs.map(d => {
                 const isReverted = d.status === 'REVERTED';
-                const cardCls = isReverted
-                    ? 'iris-panel opacity-75'
-                    : 'iris-panel border-amber-500/40';
+                const isHighlighted = highlightedDecisionId && d.id === highlightedDecisionId;
+                const cardCls = isHighlighted
+                    ? 'iris-panel border-2 border-cyan-500 ring-2 ring-cyan-500/30'
+                    : (isReverted ? 'iris-panel opacity-75' : 'iris-panel border-amber-500/40');
                 const statusBadge = isReverted
-                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-muted text-muted-foreground border border-border">REVERTED</span>'
+                    ? (d.expired
+                        ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">⏱️ EXPIRED -> REVERTED</span>'
+                        : '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-muted text-muted-foreground border border-border">REVERTED</span>')
                     : '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">ACTIVE</span>';
-                const srcBadge = d.source === 'AI_SOAR'
-                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">🤖 AI SOAR</span>'
-                    : '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30">🎖️ Commander</span>';
+                let srcBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30">🎖️ Commander</span>';
+                if (d.source === 'AI_SOAR') {
+                    srcBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">🤖 AI SOAR</span>';
+                } else if (d.source === 'RECONCILER') {
+                    srcBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">🔄 Reconciler</span>';
+                }
+                const orphanBadge = d.is_orphan
+                    ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">⚠️ Nguồn không xác định</span>'
+                    : '';
+                const ckeyBadge = d.control_key
+                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-muted/70 text-foreground/80 border border-border">${escapeHtml(d.control_key)}</span>`
+                    : '';
+                const ttlBadge = (!isReverted && d.expires_at)
+                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/25">⏱️ TTL tới ${escapeHtml(d.expires_at)}</span>`
+                    : '';
+
+                const details = d.control_cases_detail || [];
+                const refCases = details.length > 0
+                    ? details
+                    : (d.control_cases || (d.case_id ? [d.case_id] : [])).map(cid => ({ case_id: cid, role: cid === d.source_case_id ? 'SOURCE' : 'REFERENCING' }));
+                const caseChipsHtml = refCases.length > 0
+                    ? `<div class="flex flex-wrap items-center gap-1 pt-0.5">
+                        <span class="text-[10px] text-muted-foreground font-mono">Cases liên quan:</span>
+                        ${refCases.map(c => {
+                            const roleCls = c.role === 'SOURCE'
+                                ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/30'
+                                : 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30';
+                            const roleTag = c.role === 'SOURCE' ? 'gốc' : 'tham chiếu';
+                            return `<button type="button" onclick="openCaseFromAsset('${escapeHtml(c.case_id)}')" class="px-1.5 py-0.5 rounded text-[10px] font-mono border ${roleCls} hover:opacity-80 transition">${escapeHtml(c.case_id)} (${roleTag})</button>`;
+                        }).join('')}
+                       </div>`
+                    : '';
+
+                const prop = (!isReverted && d.pending_revert_proposal) ? d.pending_revert_proposal : null;
+                const proposalBannerHtml = prop
+                    ? `<div class="mt-1.5 p-2 rounded-lg border border-amber-500/50 bg-amber-500/10 space-y-1.5">
+                        <div class="flex flex-wrap justify-between items-center gap-1 text-[11px]">
+                            <span class="font-bold text-amber-700 dark:text-amber-300">⏳ Đề xuất đảo ngược từ ${escapeHtml(prop.proposed_by || 'AI_SOAR')} (${escapeHtml(prop.proposed_at || '')})</span>
+                        </div>
+                        <div class="text-[11px] text-foreground/90">${escapeHtml(prop.reason || '')}</div>
+                        <div class="flex flex-wrap gap-1.5 pt-1">
+                            <button type="button" onclick="revertDecisionItem('${escapeHtml(d.id)}')" class="px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition">✅ Xác nhận Đảo ngược</button>
+                            <button type="button" onclick="rejectRevertProposal('${escapeHtml(d.id)}')" class="px-2 py-1 rounded bg-card hover:bg-muted text-foreground border border-border text-[10px] font-medium transition">✕ Từ chối đề xuất</button>
+                        </div>
+                       </div>`
+                    : '';
+
                 const actionBtn = isReverted
                     ? `<button onclick="reapplyDecisionItem('${escapeHtml(d.id)}')" class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-200 border border-cyan-500/30 text-[11px] font-semibold">🔄 Thực thi lại</button>`
                     : `<button onclick="revertDecisionItem('${escapeHtml(d.id)}')" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-700 dark:text-rose-200 border border-rose-500/40 text-[11px] font-bold">↩️ Đảo ngược</button>`;
 
                 return `
-                    <div class="p-3 ${cardCls} space-y-1.5">
+                    <div id="decision-card-${escapeHtml(d.id)}" class="p-3 ${cardCls} space-y-1.5">
                         <div class="flex justify-between items-center gap-2">
                             <div class="flex flex-wrap items-center gap-1.5">
                                 <span class="font-mono font-bold text-amber-700 dark:text-amber-300">${escapeHtml(d.id)}</span>
                                 ${statusBadge}
                                 ${srcBadge}
-                                ${d.case_id ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-muted text-cyan-700 dark:text-cyan-300 border border-border">${escapeHtml(d.case_id)}</span>` : ''}
+                                ${ckeyBadge}
+                                ${orphanBadge}
+                                ${ttlBadge}
                             </div>
                             <div class="shrink-0">${actionBtn}</div>
                         </div>
@@ -715,7 +910,11 @@ function renderContingencyRoomsFromCache(force = false) {
                             Mục tiêu: <span class="text-cyan-700 dark:text-cyan-300 font-semibold">${escapeHtml(d.target)}</span> | Tạo: ${escapeHtml(d.created_at || '')}
                             ${isReverted && d.reverted_at ? ` | Đảo ngược lúc: <span class="text-amber-600 dark:text-amber-300">${escapeHtml(d.reverted_at)}</span>` : ''}
                         </div>
+                        ${d.source_label ? `<div class="text-[11px] font-mono ${d.is_orphan ? 'text-rose-600 dark:text-rose-300' : 'text-cyan-700 dark:text-cyan-300'}">${escapeHtml(d.source_label)}</div>` : ''}
+                        ${caseChipsHtml}
                         ${d.reason ? `<div class="text-[11px] text-foreground/85">Lý do: ${escapeHtml(d.reason)}</div>` : ''}
+                        ${proposalBannerHtml}
+                        ${isReverted && d.revert_reason ? `<div class="text-[11px] font-mono text-foreground/85">Lý do đảo ngược (${escapeHtml(d.reverted_by || 'SOC')}): ${escapeHtml(d.revert_reason)}</div>` : ''}
                         ${isReverted && d.revert_result ? `<div class="text-[11px] font-mono text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">↩️ ${escapeHtml(d.revert_result)}</div>` : ''}
                     </div>
                 `;
