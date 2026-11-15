@@ -83,7 +83,7 @@ function renderAssetsFromCache(force = false) {
         const ipsList = (a.all_ips && a.all_ips.length > 0) ? a.all_ips.join(', ') : (a.ip || 'N/A');
         const agentText = a.agent_id ? `<div class="text-[10px] text-purple-600 dark:text-purple-300 font-mono mt-0.5">Wazuh Agent: #${escapeHtml(a.agent_id)}</div>` : '';
         const containmentBadge = a.containment_status
-            ? `<div class="mt-1 inline-block px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">🛡️ ${escapeHtml(a.containment_status)}</div>`
+            ? `<div class="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">${renderIcon('shield-alert', 'w-3 h-3')}<span>${escapeHtml(a.containment_status)}</span></div>`
             : '';
         const ac = a.active_control;
         let activeControlLinksHtml = '';
@@ -91,9 +91,9 @@ function renderAssetsFromCache(force = false) {
             const originLink = ac.source_case_id
                 ? `<button onclick="openCaseFromAsset('${escapeHtml(ac.source_case_id)}')" class="px-1.5 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 font-mono text-[10px] transition">[${escapeHtml(ac.source_case_id)}]</button>`
                 : (ac.is_orphan
-                    ? `<span class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30 font-mono text-[10px]">⚠️ Nguồn không xác định</span>`
+                    ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30 font-mono text-[10px]">${renderIcon('triangle-alert', 'w-3 h-3')}<span>Nguồn không xác định</span></span>`
                     : '');
-            const decJumpBtn = `<button onclick="openDecisionInRoom('${escapeHtml(ac.decision_id)}', '${escapeHtml(ac.room_id || '')}', '${escapeHtml(ac.source_case_id || '')}')" class="px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/35 font-mono text-[10px] font-semibold transition">🔗 Xem Decision (${escapeHtml(ac.decision_id)}) trong Room</button>`;
+            const decJumpBtn = `<button onclick="openDecisionInRoom('${escapeHtml(ac.decision_id)}', '${escapeHtml(ac.room_id || '')}', '${escapeHtml(ac.source_case_id || '')}')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/35 font-mono text-[10px] font-semibold transition">${renderIcon('link-2', 'w-3 h-3')}<span>Xem Decision (${escapeHtml(ac.decision_id)}) trong Room</span></button>`;
             activeControlLinksHtml = `<div class="flex flex-wrap items-center gap-1 mt-1">${originLink}${decJumpBtn}</div>`;
         }
 
@@ -132,8 +132,8 @@ function renderAssetsFromCache(force = false) {
                     ${caseLinksHtml}
                 </td>
                 <td class="p-3 text-right whitespace-nowrap space-x-1">
-                    <button onclick="editAssetItem('${escapeHtml(a.id)}')" class="px-2.5 py-1 rounded-lg bg-card hover:bg-muted text-cyan-700 dark:text-cyan-300 border border-border text-[11px]">✏️ Sửa</button>
-                    <button onclick="deleteAssetItem('${escapeHtml(a.id)}', '${escapeHtml(a.name)}')" class="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30 text-[11px]">🗑️ Xóa</button>
+                    <button onclick="editAssetItem('${escapeHtml(a.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted text-cyan-700 dark:text-cyan-300 border border-border text-[11px]">${renderIcon('pencil', 'w-3 h-3')}<span>Sửa</span></button>
+                    <button onclick="deleteAssetItem('${escapeHtml(a.id)}', '${escapeHtml(a.name)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30 text-[11px]">${renderIcon('trash-2', 'w-3 h-3')}<span>Xóa</span></button>
                 </td>
             </tr>
         `;
@@ -149,7 +149,7 @@ function editAssetItem(assetId) {
     document.getElementById('asset-agent-id').value = asset.agent_id || '';
     document.getElementById('asset-labels').value = (asset.labels || []).join(', ');
     document.getElementById('asset-owner').value = asset.owner || '';
-    document.getElementById('btn-asset-submit').innerText = '💾 Lưu';
+    document.getElementById('btn-asset-submit').innerHTML = `<span class="inline-flex items-center justify-center gap-1.5">${renderIcon('save', 'w-3.5 h-3.5')}<span>Lưu</span></span>`;
     document.getElementById('btn-asset-cancel-edit').classList.remove('hidden');
     document.getElementById('asset-name').focus();
 }

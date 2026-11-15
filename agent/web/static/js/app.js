@@ -33,6 +33,7 @@ async function refresh() {
 }
 
 (function initAppShell() {
+    initLucideStaticIcons();
     updateThemeButton();
     updateSidebarClock();
     setInterval(updateSidebarClock, 1000);

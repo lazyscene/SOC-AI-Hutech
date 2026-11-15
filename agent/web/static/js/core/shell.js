@@ -4,7 +4,7 @@ function updateThemeButton() {
     const isDark = document.documentElement.classList.contains('dark');
     const iconEl = document.getElementById('theme-toggle-icon');
     const lblEl = document.getElementById('theme-toggle-label');
-    if (iconEl) iconEl.textContent = isDark ? '🌙' : '☀️';
+    if (iconEl) iconEl.innerHTML = renderIcon(isDark ? 'moon' : 'sun', 'w-3.5 h-3.5');
     if (lblEl) lblEl.textContent = isDark ? 'Dark' : 'Light';
 }
 

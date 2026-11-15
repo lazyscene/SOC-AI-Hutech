@@ -3,7 +3,7 @@
 async function triggerSim() {
     const btn = document.getElementById('btn-sim');
     btn.disabled = true;
-    btn.innerHTML = '<span>⏳ Đang gửi...</span>';
+    btn.innerHTML = `${renderIcon('loader-2', 'w-3.5 h-3.5 animate-spin')}<span>Đang gửi...</span>`;
     try {
         await fetch('/api/simulate', { method: 'POST' });
     } catch (e) {
@@ -11,7 +11,7 @@ async function triggerSim() {
     }
     setTimeout(() => {
         btn.disabled = false;
-        btn.innerHTML = '<span>⚡ Giả Lập Alert</span>';
+        btn.innerHTML = `${renderIcon('zap', 'w-3.5 h-3.5')}<span>Giả Lập Alert</span>`;
     }, 5000);
 }
 
@@ -19,14 +19,14 @@ async function clearBlocklist() {
     if (!confirm('Bạn có chắc muốn xóa sạch toàn bộ IP trong Alias SOC_BLOCKLIST trên pfSense?')) return;
     const btn = document.getElementById('btn-clear');
     btn.disabled = true;
-    btn.innerText = 'Đang xóa...';
+    btn.innerHTML = `${renderIcon('loader-2', 'w-3.5 h-3.5 animate-spin')}<span>Đang xóa...</span>`;
     try {
         await fetch('/api/clear-blocklist', { method: 'POST' });
     } catch (e) {
         console.error(e);
     }
     btn.disabled = false;
-    btn.innerText = '🧹 Xóa Blocklist';
+    btn.innerHTML = `${renderIcon('eraser', 'w-3.5 h-3.5')}<span>Xóa Blocklist</span>`;
     refresh();
 }
 
@@ -74,8 +74,16 @@ function renderDashboardStreamAndVerdicts(data) {
 
     const blockedIps = (data.stats.blocked_ips && data.stats.blocked_ips.length > 0) ? data.stats.blocked_ips : [];
     const epActions = (data.stats.endpoint_actions && data.stats.endpoint_actions.length > 0) ? data.stats.endpoint_actions : [];
-    const combinedActions = [...blockedIps.map(ip => `🔥 pfSense: ${ip}`), ...epActions.map(a => `🛡️ ${a}`)];
-    document.getElementById('st-blocked').innerText = combinedActions.length > 0 ? combinedActions.join(' | ') : 'Chưa có';
+    const stBlockedEl = document.getElementById('st-blocked');
+    if (blockedIps.length === 0 && epActions.length === 0) {
+        stBlockedEl.textContent = 'Chưa có';
+    } else {
+        const items = [
+            ...blockedIps.map(ip => `<span class="inline-flex items-center gap-1">${renderIcon('flame', 'w-3 h-3 text-rose-500')}<span>pfSense: ${escapeHtml(ip)}</span></span>`),
+            ...epActions.map(a => `<span class="inline-flex items-center gap-1">${renderIcon('shield', 'w-3 h-3 text-amber-500')}<span>${escapeHtml(a)}</span></span>`),
+        ];
+        stBlockedEl.innerHTML = items.join(' <span class="text-muted-foreground mx-1">|</span> ');
+    }
 
     const streamBox = document.getElementById('stream-box');
     if (!data.reasoning_stream || data.reasoning_stream.length === 0) {
@@ -102,7 +110,7 @@ function renderDashboardStreamAndVerdicts(data) {
     if (!data.decisions || data.decisions.length === 0) {
         decisionBox.innerHTML = `
             <div class="h-full flex flex-col items-center justify-center text-center p-6 text-muted-foreground border border-dashed border-border rounded-xl">
-                <div class="text-3xl mb-2">🛡️</div>
+                <div class="mb-2 text-muted-foreground/70">${renderIcon('shield-check', 'w-8 h-8')}</div>
                 <div class="font-semibold text-foreground/80">Chưa có phán quyết nào</div>
                 <div class="text-xs text-muted-foreground mt-1">Hệ thống đang trực chiến. Bấm nút <b>"Giả Lập Alert"</b> trên thanh công cụ để kiểm tra phản ứng Qwen AI &amp; Threat Intel.</div>
             </div>`;
@@ -139,16 +147,16 @@ function renderDashboardStreamAndVerdicts(data) {
             let mitreHtml = '';
             if (d.mitre && d.mitre.length > 0) {
                 mitreHtml = '<div class="flex flex-wrap gap-1 mt-1.5">' + d.mitre.map(m =>
-                    `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-                        🛡️ MITRE: ${escapeHtml(m)}
+                    `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">
+                        ${renderIcon('shield', 'w-3 h-3')}<span>MITRE: ${escapeHtml(m)}</span>
                     </span>`
                 ).join('') + '</div>';
             }
 
             let tiHtml = '';
             if (d.ti_summary) {
-                tiHtml = `<div class="mt-1.5 text-[11px] font-mono text-cyan-800 dark:text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-2.5 py-1 rounded-lg">
-                    🌐 <b>Threat Intel:</b> ${escapeHtml(d.ti_summary)}
+                tiHtml = `<div class="mt-1.5 text-[11px] font-mono text-cyan-800 dark:text-cyan-300 bg-cyan-500/10 border border-cyan-500/25 px-2.5 py-1 rounded-lg flex items-start gap-1.5">
+                    ${renderIcon('globe', 'w-3.5 h-3.5 mt-0.5 text-cyan-600 dark:text-cyan-400')}<span><b>Threat Intel:</b> ${escapeHtml(d.ti_summary)}</span>
                 </div>`;
             }
 
@@ -158,8 +166,8 @@ function renderDashboardStreamAndVerdicts(data) {
                 const arStyle = isLocked
                     ? 'text-amber-700 dark:text-amber-300 bg-amber-500/10 border-amber-500/30'
                     : 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/30';
-                arHtml = `<div class="mt-1.5 text-[11px] font-mono ${arStyle} border px-2.5 py-1 rounded-lg">
-                    🛡️ <b>Wazuh Active Response (:55000):</b> ${escapeHtml(d.endpoint_response)}
+                arHtml = `<div class="mt-1.5 text-[11px] font-mono ${arStyle} border px-2.5 py-1 rounded-lg flex items-start gap-1.5">
+                    ${renderIcon('shield-alert', 'w-3.5 h-3.5 mt-0.5')}<span><b>Wazuh Active Response (:55000):</b> ${escapeHtml(d.endpoint_response)}</span>
                 </div>`;
             }
 

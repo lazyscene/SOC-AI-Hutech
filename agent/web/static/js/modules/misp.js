@@ -61,7 +61,7 @@ async function syncMispFeeds() {
     const btn = document.getElementById('btn-sync-osint');
     const originalHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span>⏳ Đang tải Feeds từ OSINT...</span>';
+    btn.innerHTML = `${renderIcon('loader-2', 'w-3.5 h-3.5 animate-spin')}<span>Đang tải Feeds từ OSINT...</span>`;
     btn.classList.add('opacity-75', 'cursor-not-allowed');
     try {
         const res = await fetch('/api/misp/sync', { method: 'POST' });

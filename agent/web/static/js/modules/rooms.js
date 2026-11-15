@@ -414,11 +414,13 @@ function revertDecisionItem(decisionId, prefillReason = '') {
         const details = dec.control_cases_detail || [];
         const rawIds = dec.control_cases || (dec.case_id ? [dec.case_id] : []);
         const count = details.length || rawIds.length;
-        let warnTitle = '⚠️ Kiểm tra tác động trước khi mở khóa / gỡ chặn:';
+        let warnIcon = 'triangle-alert';
+        let warnTitle = 'Kiểm tra tác động trước khi mở khóa / gỡ chặn:';
         if (count > 1) {
-            warnTitle = `🚨 CẢNH BÁO ĐA CASE (${count} CASES): Gỡ bỏ control này sẽ ảnh hưởng đồng thời tới nhiều hồ sơ đang liên kết!`;
+            warnIcon = 'siren';
+            warnTitle = `CẢNH BÁO ĐA CASE (${count} CASES): Gỡ bỏ control này sẽ ảnh hưởng đồng thời tới nhiều hồ sơ đang liên kết!`;
         } else if (dec.is_orphan) {
-            warnTitle = '⚠️ CẢNH BÁO ORPHAN CONTROL: Control này có nguồn khởi phát không xác định. Hãy chắc chắn bạn hiểu tác động thực tế trước khi gỡ.';
+            warnTitle = 'CẢNH BÁO ORPHAN CONTROL: Control này có nguồn khởi phát không xác định. Hãy chắc chắn bạn hiểu tác động thực tế trước khi gỡ.';
         }
         const chipsHtml = details.length > 0
             ? details.map(c => `<div class="flex items-center justify-between gap-2 px-2 py-1 rounded bg-card/80 border border-border text-[11px] font-mono">
@@ -428,7 +430,7 @@ function revertDecisionItem(decisionId, prefillReason = '') {
             : (rawIds.length > 0
                 ? `<div class="font-mono text-[11px]">${rawIds.map(escapeHtml).join(', ')}</div>`
                 : '<div class="text-[11px] text-muted-foreground">Không có Case nào được liên kết trực tiếp.</div>');
-        impactEl.innerHTML = `<div class="font-bold text-amber-700 dark:text-amber-300">${escapeHtml(warnTitle)}</div>${chipsHtml}`;
+        impactEl.innerHTML = `<div class="font-bold text-amber-700 dark:text-amber-300 inline-flex items-start gap-1.5">${renderIcon(warnIcon, 'w-3.5 h-3.5 mt-0.5')}<span>${escapeHtml(warnTitle)}</span></div>${chipsHtml}`;
     }
 
     const reasonInput = document.getElementById('revert-confirm-reason');
@@ -479,7 +481,7 @@ async function confirmRevertModalSubmit(e) {
             await refresh();
         } else {
             if (errEl) {
-                errEl.textContent = '❌ ' + (data.message || 'Không thể đảo ngược quyết định.');
+                errEl.innerHTML = `<span class="inline-flex items-center gap-1">${renderIcon('triangle-alert', 'w-3.5 h-3.5 shrink-0')}<span>${escapeHtml(data.message || 'Không thể đảo ngược quyết định.')}</span></span>`;
                 errEl.classList.remove('hidden');
             } else {
                 alert('❌ ' + (data.message || 'Không thể đảo ngược quyết định.'));
@@ -487,7 +489,7 @@ async function confirmRevertModalSubmit(e) {
         }
     } catch (err) {
         if (errEl) {
-            errEl.textContent = '❌ Lỗi đảo ngược Decision: ' + err;
+            errEl.innerHTML = `<span class="inline-flex items-center gap-1">${renderIcon('triangle-alert', 'w-3.5 h-3.5 shrink-0')}<span>${escapeHtml('Lỗi đảo ngược Decision: ' + err)}</span></span>`;
             errEl.classList.remove('hidden');
         } else {
             alert('❌ Lỗi đảo ngược Decision: ' + err);
@@ -635,21 +637,21 @@ function renderContingencyRoomsFromCache(force = false) {
         const mitreCnt = Number(board.mitre_techniques_count || 0);
 
         const kpiCards = [
-            { label: 'Compromised', icon: '🔌', value: compCnt, valCls: compCnt > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground', sub: `${board.unflagged_assets_count || 0} assets without a flag` },
-            { label: 'Open decisions', icon: '⚖️', value: openDecs, valCls: openDecs > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-foreground', sub: `${board.reversible_decisions_count || 0} reversible (có thể đảo ngược)` },
-            { label: 'Exceptions (Reverted)', icon: '↩️', value: revDecs, valCls: revDecs > 0 ? 'text-cyan-600 dark:text-cyan-300' : 'text-foreground', sub: revDecs === 0 ? 'None' : `${revDecs} hành động đã hoàn tác` },
-            { label: 'Open tasks / Actions', icon: '📋', value: openTasks, valCls: 'text-foreground', sub: `${board.in_progress_cases_count || 0} cases in progress` },
-            { label: 'Open alerts on assets', icon: '🛡️', value: openAlerts, valCls: openAlerts > 0 ? 'text-amber-600 dark:text-amber-200' : 'text-foreground', sub: 'Open findings on room case assets' },
-            { label: 'Exploited & open', icon: '🔥', value: expOpen, valCls: expOpen > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground', sub: expOpen > 0 ? `${expOpen} TRUE POSITIVE open` : 'No exploited case left open' },
-            { label: 'Active Containment', icon: '🚧', value: containedCnt, valCls: containedCnt > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground', sub: 'Blocked IPs & Isolated hosts' },
-            { label: 'MITRE Techniques', icon: '🎯', value: mitreCnt, valCls: mitreCnt > 0 ? 'text-purple-600 dark:text-purple-300' : 'text-foreground', sub: (board.mitre_techniques && board.mitre_techniques.length > 0) ? board.mitre_techniques.slice(0, 3).join(', ') : 'No techniques mapped' },
+            { label: 'Compromised', icon: 'unplug', value: compCnt, valCls: compCnt > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground', sub: `${board.unflagged_assets_count || 0} assets without a flag` },
+            { label: 'Open decisions', icon: 'scale', value: openDecs, valCls: openDecs > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-foreground', sub: `${board.reversible_decisions_count || 0} reversible (có thể đảo ngược)` },
+            { label: 'Exceptions (Reverted)', icon: 'undo-2', value: revDecs, valCls: revDecs > 0 ? 'text-cyan-600 dark:text-cyan-300' : 'text-foreground', sub: revDecs === 0 ? 'None' : `${revDecs} hành động đã hoàn tác` },
+            { label: 'Open tasks / Actions', icon: 'clipboard-list', value: openTasks, valCls: 'text-foreground', sub: `${board.in_progress_cases_count || 0} cases in progress` },
+            { label: 'Open alerts on assets', icon: 'shield-alert', value: openAlerts, valCls: openAlerts > 0 ? 'text-amber-600 dark:text-amber-200' : 'text-foreground', sub: 'Open findings on room case assets' },
+            { label: 'Exploited & open', icon: 'flame', value: expOpen, valCls: expOpen > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground', sub: expOpen > 0 ? `${expOpen} TRUE POSITIVE open` : 'No exploited case left open' },
+            { label: 'Active Containment', icon: 'ban', value: containedCnt, valCls: containedCnt > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground', sub: 'Blocked IPs & Isolated hosts' },
+            { label: 'MITRE Techniques', icon: 'crosshair', value: mitreCnt, valCls: mitreCnt > 0 ? 'text-purple-600 dark:text-purple-300' : 'text-foreground', sub: (board.mitre_techniques && board.mitre_techniques.length > 0) ? board.mitre_techniques.slice(0, 3).join(', ') : 'No techniques mapped' },
         ];
 
         kpisEl.innerHTML = kpiCards.map(k => `
             <div class="iris-panel p-3.5 flex flex-col justify-between">
                 <div class="flex justify-between items-center text-xs text-muted-foreground font-medium">
                     <span>${escapeHtml(k.label)}</span>
-                    <span>${k.icon}</span>
+                    <span class="text-muted-foreground">${renderIcon(k.icon, 'w-4 h-4')}</span>
                 </div>
                 <div class="text-2xl font-bold font-mono mt-1.5 ${k.valCls}">${k.value}</div>
                 <div class="text-[11px] text-muted-foreground mt-1 truncate" title="${escapeHtml(k.sub)}">${escapeHtml(k.sub)}</div>
@@ -706,7 +708,7 @@ function renderContingencyRoomsFromCache(force = false) {
                                 <div class="font-bold text-foreground text-xs truncate">
                                     <span class="text-muted-foreground font-mono">#${escapeHtml(rc.id)}</span> ${escapeHtml(rc.title)}
                                 </div>
-                                <div class="text-[11px] text-muted-foreground mt-0.5 truncate">🏢 ${escapeHtml(assetsTxt)} · 👤 ${escapeHtml(rc.commander || 'SOC Commander')}</div>
+                                <div class="text-[11px] text-muted-foreground mt-0.5 truncate flex items-center gap-1.5">${renderIcon('building-2', 'w-3 h-3')}<span class="truncate">${escapeHtml(assetsTxt)}</span><span>·</span>${renderIcon('user', 'w-3 h-3')}<span>${escapeHtml(rc.commander || 'SOC Commander')}</span></div>
                             </div>
                             <div class="flex items-center gap-1 shrink-0">
                                 <span class="px-2 py-0.5 rounded-full text-[10px] border ${stageBadgeCls}">${escapeHtml(rc.stage_label || activeRoom.stage)}</span>
@@ -721,8 +723,8 @@ function renderContingencyRoomsFromCache(force = false) {
                             <span class="${rc.compromised_count > 0 ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-muted-foreground'}">${rc.compromised_count} compromised</span>
                         </div>
                         <div class="flex justify-between items-center pt-1.5 border-t border-border text-[10px] font-mono text-muted-foreground">
-                            <span>📄 ${rc.alert_count} alerts · ⚖️ ${rc.decisions_reverted} reverted · ${escapeHtml(rc.verdict)}</span>
-                            <button onclick="detachCaseFromRoom('${escapeHtml(activeRoom.id)}', '${escapeHtml(rc.id)}')" class="text-rose-600 dark:text-rose-400 hover:underline px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/25">✕ Gỡ</button>
+                            <span class="inline-flex items-center gap-1">${renderIcon('file-text', 'w-3 h-3')}<span>${rc.alert_count} alerts</span><span>·</span>${renderIcon('scale', 'w-3 h-3')}<span>${rc.decisions_reverted} reverted · ${escapeHtml(rc.verdict)}</span></span>
+                            <button onclick="detachCaseFromRoom('${escapeHtml(activeRoom.id)}', '${escapeHtml(rc.id)}')" class="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400 hover:underline px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/25">${renderIcon('x', 'w-3 h-3')}<span>Gỡ</span></button>
                         </div>
                     </div>
                 `;
@@ -750,7 +752,9 @@ function renderContingencyRoomsFromCache(force = false) {
     const isAiThinking = Boolean(activeRoom.ai_thinking);
     if (askAiBtn) {
         askAiBtn.disabled = isAiThinking;
-        askAiBtn.textContent = isAiThinking ? '⏳ GPU đang suy luận...' : '🤖 AI Tóm Tắt Tác Chiến';
+        askAiBtn.innerHTML = isAiThinking
+            ? `${renderIcon('loader-2', 'w-3.5 h-3.5 animate-spin')}<span>GPU đang suy luận...</span>`
+            : `${renderIcon('bot', 'w-3.5 h-3.5')}<span>AI Tóm Tắt Tác Chiến</span>`;
     }
     if (chatEl) {
         const rawMsgs = activeRoom.messages || [];
@@ -806,7 +810,7 @@ function renderContingencyRoomsFromCache(force = false) {
         if (isAiThinking) {
             chatHtml += `
                 <div class="p-2.5 rounded-lg border border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-200 animate-pulse flex items-center gap-2 text-xs">
-                    <span>🧠</span>
+                    ${renderIcon('cpu', 'w-4 h-4')}
                     <span class="font-semibold">Qwen AI Agent (GPU) đang suy luận &amp; tra cứu công cụ...</span>
                 </div>
             `;
@@ -838,23 +842,23 @@ function renderContingencyRoomsFromCache(force = false) {
                     : (isReverted ? 'iris-panel opacity-75' : 'iris-panel border-amber-500/40');
                 const statusBadge = isReverted
                     ? (d.expired
-                        ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">⏱️ EXPIRED -> REVERTED</span>'
+                        ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">${renderIcon('clock', 'w-3 h-3')}<span>EXPIRED -> REVERTED</span></span>`
                         : '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-muted text-muted-foreground border border-border">REVERTED</span>')
                     : '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">ACTIVE</span>';
-                let srcBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30">🎖️ Commander</span>';
+                let srcBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30">${renderIcon('shield', 'w-3 h-3')}<span>Commander</span></span>`;
                 if (d.source === 'AI_SOAR') {
-                    srcBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">🤖 AI SOAR</span>';
+                    srcBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30">${renderIcon('bot', 'w-3 h-3')}<span>AI SOAR</span></span>`;
                 } else if (d.source === 'RECONCILER') {
-                    srcBadge = '<span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">🔄 Reconciler</span>';
+                    srcBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30">${renderIcon('refresh-cw', 'w-3 h-3')}<span>Reconciler</span></span>`;
                 }
                 const orphanBadge = d.is_orphan
-                    ? '<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">⚠️ Nguồn không xác định</span>'
+                    ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">${renderIcon('triangle-alert', 'w-3 h-3')}<span>Nguồn không xác định</span></span>`
                     : '';
                 const ckeyBadge = d.control_key
                     ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-muted/70 text-foreground/80 border border-border">${escapeHtml(d.control_key)}</span>`
                     : '';
                 const ttlBadge = (!isReverted && d.expires_at)
-                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/25">⏱️ TTL tới ${escapeHtml(d.expires_at)}</span>`
+                    ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/25">${renderIcon('clock', 'w-3 h-3')}<span>TTL tới ${escapeHtml(d.expires_at)}</span></span>`
                     : '';
 
                 const details = d.control_cases_detail || [];
@@ -878,19 +882,19 @@ function renderContingencyRoomsFromCache(force = false) {
                 const proposalBannerHtml = prop
                     ? `<div class="mt-1.5 p-2 rounded-lg border border-amber-500/50 bg-amber-500/10 space-y-1.5">
                         <div class="flex flex-wrap justify-between items-center gap-1 text-[11px]">
-                            <span class="font-bold text-amber-700 dark:text-amber-300">⏳ Đề xuất đảo ngược từ ${escapeHtml(prop.proposed_by || 'AI_SOAR')} (${escapeHtml(prop.proposed_at || '')})</span>
+                            <span class="inline-flex items-center gap-1 font-bold text-amber-700 dark:text-amber-300">${renderIcon('hourglass', 'w-3 h-3')}<span>Đề xuất đảo ngược từ ${escapeHtml(prop.proposed_by || 'AI_SOAR')} (${escapeHtml(prop.proposed_at || '')})</span></span>
                         </div>
                         <div class="text-[11px] text-foreground/90">${escapeHtml(prop.reason || '')}</div>
                         <div class="flex flex-wrap gap-1.5 pt-1">
-                            <button type="button" onclick="revertDecisionItem('${escapeHtml(d.id)}')" class="px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition">✅ Xác nhận Đảo ngược</button>
-                            <button type="button" onclick="rejectRevertProposal('${escapeHtml(d.id)}')" class="px-2 py-1 rounded bg-card hover:bg-muted text-foreground border border-border text-[10px] font-medium transition">✕ Từ chối đề xuất</button>
+                            <button type="button" onclick="revertDecisionItem('${escapeHtml(d.id)}')" class="inline-flex items-center gap-1 px-2 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition">${renderIcon('check', 'w-3 h-3')}<span>Xác nhận Đảo ngược</span></button>
+                            <button type="button" onclick="rejectRevertProposal('${escapeHtml(d.id)}')" class="inline-flex items-center gap-1 px-2 py-1 rounded bg-card hover:bg-muted text-foreground border border-border text-[10px] font-medium transition">${renderIcon('x', 'w-3 h-3')}<span>Từ chối đề xuất</span></button>
                         </div>
                        </div>`
                     : '';
 
                 const actionBtn = isReverted
-                    ? `<button onclick="reapplyDecisionItem('${escapeHtml(d.id)}')" class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-200 border border-cyan-500/30 text-[11px] font-semibold">🔄 Thực thi lại</button>`
-                    : `<button onclick="revertDecisionItem('${escapeHtml(d.id)}')" class="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-700 dark:text-rose-200 border border-rose-500/40 text-[11px] font-bold">↩️ Đảo ngược</button>`;
+                    ? `<button onclick="reapplyDecisionItem('${escapeHtml(d.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-200 border border-cyan-500/30 text-[11px] font-semibold">${renderIcon('rotate-ccw', 'w-3 h-3')}<span>Thực thi lại</span></button>`
+                    : `<button onclick="revertDecisionItem('${escapeHtml(d.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-700 dark:text-rose-200 border border-rose-500/40 text-[11px] font-bold">${renderIcon('undo-2', 'w-3 h-3')}<span>Đảo ngược</span></button>`;
 
                 return `
                     <div id="decision-card-${escapeHtml(d.id)}" class="p-3 ${cardCls} space-y-1.5">
@@ -915,7 +919,7 @@ function renderContingencyRoomsFromCache(force = false) {
                         ${d.reason ? `<div class="text-[11px] text-foreground/85">Lý do: ${escapeHtml(d.reason)}</div>` : ''}
                         ${proposalBannerHtml}
                         ${isReverted && d.revert_reason ? `<div class="text-[11px] font-mono text-foreground/85">Lý do đảo ngược (${escapeHtml(d.reverted_by || 'SOC')}): ${escapeHtml(d.revert_reason)}</div>` : ''}
-                        ${isReverted && d.revert_result ? `<div class="text-[11px] font-mono text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">↩️ ${escapeHtml(d.revert_result)}</div>` : ''}
+                        ${isReverted && d.revert_result ? `<div class="flex items-start gap-1.5 text-[11px] font-mono text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-lg">${renderIcon('undo-2', 'w-3 h-3 mt-0.5')}<span>${escapeHtml(d.revert_result)}</span></div>` : ''}
                     </div>
                 `;
             }).join('');

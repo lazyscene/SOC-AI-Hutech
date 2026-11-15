@@ -201,7 +201,7 @@ function renderCasesFromCache(force = false) {
                 return `
                     <div class="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/30 space-y-1.5">
                         <div class="flex justify-between items-center gap-2">
-                            <div class="font-bold text-rose-700 dark:text-rose-300 text-xs">🔗 ${escapeHtml(inc.id)}: ${escapeHtml(inc.title)}</div>
+                            <div class="font-bold text-rose-700 dark:text-rose-300 text-xs inline-flex items-center gap-1.5">${renderIcon('link-2', 'w-3.5 h-3.5')}<span>${escapeHtml(inc.id)}: ${escapeHtml(inc.title)}</span></div>
                             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-700 dark:text-rose-200 border border-rose-500/30">${escapeHtml(inc.severity)}</span>
                         </div>
                         <div class="text-[11px] font-mono text-foreground/80">
@@ -260,20 +260,20 @@ function renderCasesFromCache(force = false) {
             : `Agent: <span class="text-purple-600 dark:text-purple-300 font-bold">${escapeHtml(c.agent_id)}</span> (${escapeHtml((c.victim_ips || []).join(', ') || 'N/A')})`;
 
         const relatedHtml = (c.related_case_ids && c.related_case_ids.length > 0)
-            ? `<span class="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30 font-mono text-[10px]">🔗 Related: ${escapeHtml(c.related_case_ids.join(', '))} ${c.parent_incident_id ? '(' + escapeHtml(c.parent_incident_id) + ')' : ''}</span>`
+            ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/30 font-mono text-[10px]">${renderIcon('link-2', 'w-3 h-3')}<span>Related: ${escapeHtml(c.related_case_ids.join(', '))} ${c.parent_incident_id ? '(' + escapeHtml(c.parent_incident_id) + ')' : ''}</span></span>`
             : '';
 
         const toggleActionStatus = c.status === 'CLOSED'
-            ? `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'OPEN')" class="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-200 border border-emerald-500/30 text-[11px] font-medium">🔓 Mở lại</button>`
-            : `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'CLOSED')" class="px-2.5 py-1 rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border text-[11px] font-medium">🔒 Đóng Case</button>`;
+            ? `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'OPEN')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-200 border border-emerald-500/30 text-[11px] font-medium">${renderIcon('unlock', 'w-3 h-3')}<span>Mở lại</span></button>`
+            : `<button onclick="changeCaseStatus('${escapeHtml(c.id)}', 'CLOSED')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted hover:bg-muted/80 text-foreground border border-border text-[11px] font-medium">${renderIcon('lock', 'w-3 h-3')}<span>Đóng Case</span></button>`;
 
         const hasGraph = Boolean(c.attack_graph);
         const isGraphOpen = hasGraph && openGraphCaseIds.has(c.id);
         const isGraphStale = hasGraph && (c.alert_count > (c.attack_graph.generated_at_alert_count || 0));
         const graphBtnHtml = !hasGraph
-            ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" class="px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-200 border border-indigo-500/30 text-[11px] font-medium">🕸️ Vẽ Sơ Đồ</button>`
-            : `<button onclick="toggleSavedGraph('${escapeHtml(c.id)}')" class="px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-200 border border-indigo-500/30 text-[11px] font-medium">${isGraphOpen ? '🕸️ Ẩn Sơ Đồ' : '🕸️ Xem Sơ Đồ'}</button>` +
-              ((isGraphOpen || isGraphStale) ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" title="Cập nhật lại sơ đồ theo dữ liệu mới nhất" class="px-2 py-1 rounded-lg bg-muted hover:bg-muted/80 text-indigo-600 dark:text-indigo-300 border border-border text-[11px]">${isGraphStale ? '🔄 Cập Nhật' : '🔄 Vẽ Lại'}</button>` : '');
+            ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-200 border border-indigo-500/30 text-[11px] font-medium">${renderIcon('waypoints', 'w-3 h-3')}<span>Vẽ Sơ Đồ</span></button>`
+            : `<button onclick="toggleSavedGraph('${escapeHtml(c.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-200 border border-indigo-500/30 text-[11px] font-medium">${renderIcon('waypoints', 'w-3 h-3')}<span>${isGraphOpen ? 'Ẩn Sơ Đồ' : 'Xem Sơ Đồ'}</span></button>` +
+              ((isGraphOpen || isGraphStale) ? `<button onclick="generateCaseGraph('${escapeHtml(c.id)}')" title="Cập nhật lại sơ đồ theo dữ liệu mới nhất" class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-muted hover:bg-muted/80 text-indigo-600 dark:text-indigo-300 border border-border text-[11px]">${renderIcon('refresh-cw', 'w-3 h-3')}<span>${isGraphStale ? 'Cập Nhật' : 'Vẽ Lại'}</span></button>` : '');
 
         let graphContainerHtml = '';
         if (isGraphOpen) {
@@ -281,8 +281,14 @@ function renderCasesFromCache(force = false) {
             graphContainerHtml = `
                 <div class="mt-2.5 pt-2.5 border-t border-indigo-500/25 space-y-2 iris-subcard p-3">
                     <div class="flex flex-wrap justify-between items-center gap-2 text-[11px]">
-                        <span class="font-bold text-indigo-700 dark:text-indigo-300">🕸️ SƠ ĐỒ MỐI LIÊN HỆ TRỰC QUAN (${escapeHtml(c.id)}) — Đã lưu lúc ${escapeHtml(g.generated_at)} (${g.generated_at_alert_count} alerts)</span>
-                        <span class="text-muted-foreground font-mono">🔴 Attacker | 🟣 Kỹ thuật | 🟡 Mục tiêu | 🔵 File/Hash/Proc | 🟢 SOAR Defense</span>
+                        <span class="font-bold text-indigo-700 dark:text-indigo-300 inline-flex items-center gap-1.5">${renderIcon('waypoints', 'w-3.5 h-3.5')}<span>SƠ ĐỒ MỐI LIÊN HỆ TRỰC QUAN (${escapeHtml(c.id)}) — Đã lưu lúc ${escapeHtml(g.generated_at)} (${g.generated_at_alert_count} alerts)</span></span>
+                        <span class="text-muted-foreground font-mono inline-flex flex-wrap items-center gap-2.5">
+                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span>Attacker</span>
+                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-purple-500"></span>Kỹ thuật</span>
+                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span>Mục tiêu</span>
+                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-500"></span>File/Hash/Proc</span>
+                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>SOAR Defense</span>
+                        </span>
                     </div>
                     ${renderAttackGraphSvg(g)}
                     <div class="text-[11px] font-mono text-indigo-700 dark:text-indigo-200 bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1.5 rounded-lg">
@@ -306,7 +312,7 @@ function renderCasesFromCache(force = false) {
             detailsHtml = `
                 <div class="mt-2.5 pt-2.5 border-t border-border space-y-2 iris-subcard p-3">
                     ${escHtml}
-                    <div class="text-[11px] font-semibold text-cyan-600 dark:text-cyan-300">📜 Danh sách Alert gốc đã gom (${(c.incident_alerts || []).length} alerts lưu kiểm toán):</div>
+                    <div class="text-[11px] font-semibold text-cyan-600 dark:text-cyan-300 inline-flex items-center gap-1.5">${renderIcon('scroll-text', 'w-3.5 h-3.5')}<span>Danh sách Alert gốc đã gom (${(c.incident_alerts || []).length} alerts lưu kiểm toán):</span></div>
                     <div class="max-h-44 overflow-y-auto pr-1">${alertsRows || '<div class="text-muted-foreground">Không có dữ liệu alert</div>'}</div>
                 </div>
             `;
@@ -325,10 +331,10 @@ function renderCasesFromCache(force = false) {
                     </div>
                     <div class="flex flex-wrap items-center gap-1.5">
                         <span class="text-[11px] font-mono text-cyan-700 dark:text-cyan-300 bg-card px-2 py-0.5 rounded-lg border border-border">Alerts: <b>${c.alert_count}</b> | SLM: <b>${c.slm_calls}</b></span>
-                        <button onclick="toggleCaseDetails('${escapeHtml(c.id)}')" class="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-200 border border-cyan-500/30 text-[11px] font-medium">${isExpanded ? '▲ Thu gọn' : '▼ Chi tiết'}</button>
+                        <button onclick="toggleCaseDetails('${escapeHtml(c.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-700 dark:text-cyan-200 border border-cyan-500/30 text-[11px] font-medium">${renderIcon(isExpanded ? 'chevron-up' : 'chevron-down', 'w-3 h-3')}<span>${isExpanded ? 'Thu gọn' : 'Chi tiết'}</span></button>
                         ${graphBtnHtml}
-                        <button onclick="replayCase('${escapeHtml(c.id)}')" class="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-700 dark:text-purple-200 border border-purple-500/30 text-[11px] font-medium">🔄 Replay</button>
-                        <button onclick="sendCaseToCurrentRoom('${escapeHtml(c.id)}')" class="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-200 border border-amber-500/30 text-[11px] font-medium">🚨 Đưa vào Room</button>
+                        <button onclick="replayCase('${escapeHtml(c.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-700 dark:text-purple-200 border border-purple-500/30 text-[11px] font-medium">${renderIcon('refresh-cw', 'w-3 h-3')}<span>Replay</span></button>
+                        <button onclick="sendCaseToCurrentRoom('${escapeHtml(c.id)}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-200 border border-amber-500/30 text-[11px] font-medium">${renderIcon('siren', 'w-3 h-3')}<span>Đưa vào Room</span></button>
                         ${toggleActionStatus}
                     </div>
                 </div>

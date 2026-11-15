@@ -19,10 +19,7 @@
             <div class="sidebar-brand-wrap flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
                 <a href="#dashboard" onclick="switchView('dashboard'); return false;" class="flex items-center gap-2.5 min-w-0">
                     <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-blue-600/20 dark:text-blue-400 dark:border dark:border-blue-500/30 shadow-sm">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v6c0 4.97-3.05 8.85-7 10-3.95-1.15-7-5.03-7-10V6l7-3z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.5 12l1.75 1.75L15 10" />
-                        </svg>
+                        <i data-lucide="shield-check" class="h-4 w-4"></i>
                     </div>
                     <div class="sidebar-brand-text min-w-0">
                         <div class="font-bold tracking-wider text-xs text-foreground">MINI-SOC</div>
@@ -30,9 +27,7 @@
                     </div>
                 </a>
                 <button onclick="toggleSidebarCollapse()" title="Thu gọn / Mở rộng Sidebar" class="hidden lg:inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-hover hover:text-foreground transition">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-                    </svg>
+                    <i data-lucide="menu" class="h-4 w-4"></i>
                 </button>
             </div>
 
@@ -55,12 +50,7 @@
                     </div>
                     <div class="space-y-1">
                         <button id="nav-dashboard" data-view="dashboard" onclick="switchView('dashboard')" class="sidebar-nav-btn w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition">
-                            <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                                <rect x="3" y="3" width="7" height="9" rx="1.5" />
-                                <rect x="14" y="3" width="7" height="5" rx="1.5" />
-                                <rect x="14" y="12" width="7" height="9" rx="1.5" />
-                                <rect x="3" y="16" width="7" height="5" rx="1.5" />
-                            </svg>
+                            <i data-lucide="layout-dashboard" class="h-4 w-4 shrink-0"></i>
                             <span class="sidebar-label truncate">Dashboard</span>
                         </button>
                     </div>
@@ -73,10 +63,7 @@
                     <div class="space-y-1">
                         <button id="btn-toggle-cases" data-view="cases" onclick="switchView('cases')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
                             <span class="flex items-center gap-2.5 min-w-0">
-                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.73 21a2 2 0 01-3.46 0" />
-                                </svg>
+                                <i data-lucide="bell" class="h-4 w-4 shrink-0"></i>
                                 <span class="sidebar-label truncate">Alerts &amp; Cases</span>
                             </span>
                             <span id="btn-case-count" class="sidebar-badge px-1.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-cyan-500/15 text-cyan-600 dark:text-cyan-300 border border-cyan-500/25">0</span>
@@ -84,10 +71,7 @@
 
                         <button id="btn-toggle-rooms" data-view="rooms" onclick="switchView('rooms')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
                             <span class="flex items-center gap-2.5 min-w-0">
-                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01" />
-                                </svg>
+                                <i data-lucide="shield-alert" class="h-4 w-4 shrink-0"></i>
                                 <span class="sidebar-label truncate">Contingency Rooms</span>
                             </span>
                             <span id="btn-room-count" class="sidebar-badge px-1.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/25">1</span>
@@ -102,10 +86,7 @@
                     <div class="space-y-1">
                         <button id="btn-toggle-assets" data-view="assets" onclick="switchView('assets')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
                             <span class="flex items-center gap-2.5 min-w-0">
-                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                                    <rect x="2" y="3" width="20" height="14" rx="2" />
-                                    <path stroke-linecap="round" d="M8 21h8M12 17v4" />
-                                </svg>
+                                <i data-lucide="monitor" class="h-4 w-4 shrink-0"></i>
                                 <span class="sidebar-label truncate">Asset Manager</span>
                             </span>
                             <span id="btn-asset-count" class="sidebar-badge px-1.5 py-0.5 rounded-full font-mono text-[10px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25">0</span>
@@ -113,11 +94,7 @@
 
                         <button id="btn-toggle-misp" data-view="misp" onclick="switchView('misp')" class="sidebar-nav-btn w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition">
                             <span class="flex items-center gap-2.5 min-w-0">
-                                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
-                                    <ellipse cx="12" cy="5" rx="9" ry="3" />
-                                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                                    <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
-                                </svg>
+                                <i data-lucide="database" class="h-4 w-4 shrink-0"></i>
                                 <span class="sidebar-label truncate">MISP IOC Vault</span>
                             </span>
                         </button>
@@ -143,9 +120,7 @@
             <header class="iris-topbar z-30 flex h-14 shrink-0 items-center justify-between gap-3 px-4 sm:px-5">
                 <div class="flex min-w-0 items-center gap-2.5">
                     <button onclick="toggleMobileSidebar(true)" class="lg:hidden inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
+                        <i data-lucide="menu" class="h-4 w-4"></i>
                     </button>
                     <div class="flex items-center gap-2 min-w-0">
                         <span class="hidden sm:inline text-xs font-mono text-muted-foreground">MINI-SOC</span>
@@ -160,23 +135,22 @@
                 <div class="flex items-center gap-2">
                     <!-- Quick Search (Ctrl+/) -->
                     <div class="relative hidden md:block w-56 lg:w-64">
-                        <svg class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                            <circle cx="11" cy="11" r="8" />
-                            <path stroke-linecap="round" d="m21 21-4.3-4.3" />
-                        </svg>
+                        <i data-lucide="search" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground"></i>
                         <input id="global-search-input" oninput="onGlobalSearchInput()" onkeydown="onGlobalSearchKeydown(event)" type="text" placeholder="Search... (Ctrl + /)" class="iris-input w-full pl-8 pr-3 py-1.5 text-xs placeholder:text-muted-foreground/70">
                     </div>
 
                     <button id="btn-clear" onclick="clearBlocklist()" title="Xóa sạch SOC_BLOCKLIST trên pfSense" class="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/70 hover:bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground transition active:scale-95">
-                        <span>🧹 Xóa Blocklist</span>
+                        <i data-lucide="eraser" class="h-3.5 w-3.5"></i>
+                        <span>Xóa Blocklist</span>
                     </button>
 
                     <button id="btn-sim" onclick="triggerSim()" class="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition active:scale-95">
-                        <span>⚡ Giả Lập Alert</span>
+                        <i data-lucide="zap" class="h-3.5 w-3.5"></i>
+                        <span>Giả Lập Alert</span>
                     </button>
 
                     <button id="btn-theme-toggle" onclick="toggleTheme()" title="Chuyển đổi Dark / Light Mode" class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-muted px-2.5 py-1.5 text-xs font-medium text-foreground transition">
-                        <span id="theme-toggle-icon">🌙</span>
+                        <span id="theme-toggle-icon" class="inline-flex items-center"><i data-lucide="moon" class="w-3.5 h-3.5"></i></span>
                         <span id="theme-toggle-label" class="hidden sm:inline">Dark</span>
                     </button>
                 </div>
@@ -198,11 +172,13 @@
                                 <p class="text-xs text-muted-foreground mt-0.5">pfSense Firewall REST API v2 + Wazuh SIEM + Threat Intel (VirusTotal, AbuseIPDB, MISP Vault) + Qwen LLM GPU Core</p>
                             </div>
                             <div class="flex items-center gap-2">
-                                <button onclick="switchView('cases')" class="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition">
-                                    🗂️ Mở Cases
+                                <button onclick="switchView('cases')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition">
+                                    <i data-lucide="folder-open" class="h-3.5 w-3.5"></i>
+                                    <span>Mở Cases</span>
                                 </button>
-                                <button onclick="switchView('rooms')" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-xs font-semibold transition">
-                                    🚨 Vào Contingency Room
+                                <button onclick="switchView('rooms')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-xs font-semibold transition">
+                                    <i data-lucide="siren" class="h-3.5 w-3.5"></i>
+                                    <span>Vào Contingency Room</span>
                                 </button>
                             </div>
                         </div>
@@ -225,7 +201,7 @@
                         <div class="iris-panel p-4 flex flex-col justify-between">
                             <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                 <span>Tổng Cảnh Báo SIEM</span>
-                                <span class="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">📡</span>
+                                <span class="h-7 w-7 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center"><i data-lucide="radio" class="h-4 w-4"></i></span>
                             </div>
                             <div id="st-total" class="text-3xl font-bold font-mono text-foreground mt-2">0</div>
                             <div class="text-[11px] text-muted-foreground mt-1">Đã đọc &amp; phân loại tự động</div>
@@ -234,7 +210,7 @@
                         <div class="iris-panel p-4 flex flex-col justify-between">
                             <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                 <span>Tấn Công (True Positive)</span>
-                                <span class="h-7 w-7 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">🔥</span>
+                                <span class="h-7 w-7 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center"><i data-lucide="flame" class="h-4 w-4"></i></span>
                             </div>
                             <div id="st-tp" class="text-3xl font-bold font-mono text-rose-600 dark:text-rose-400 mt-2">0</div>
                             <div class="text-[11px] text-muted-foreground mt-1">Sự cố xác thực cần ứng phó</div>
@@ -243,7 +219,7 @@
                         <div class="iris-panel p-4 flex flex-col justify-between">
                             <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                 <span>Cảnh Báo Giả (Filtered)</span>
-                                <span class="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">✅</span>
+                                <span class="h-7 w-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center"><i data-lucide="check-circle-2" class="h-4 w-4"></i></span>
                             </div>
                             <div id="st-fp" class="text-3xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-2">0</div>
                             <div class="text-[11px] text-muted-foreground mt-1">Nhiễu vô hại đã được loại trừ</div>
@@ -252,7 +228,7 @@
                         <div class="iris-panel p-4 flex flex-col justify-between">
                             <div class="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                 <span>Ngăn Chặn (pfSense &amp; AR)</span>
-                                <span class="h-7 w-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">🛡️</span>
+                                <span class="h-7 w-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center"><i data-lucide="shield" class="h-4 w-4"></i></span>
                             </div>
                             <div id="st-blocked" class="text-xs font-mono text-amber-600 dark:text-amber-300 mt-2 break-all max-h-14 overflow-y-auto">Chưa có</div>
                             <div class="text-[11px] text-muted-foreground mt-1">IP blocked / Endpoint isolated</div>
@@ -267,23 +243,23 @@
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-center">
                             <div class="iris-subcard p-3 border-l-4 border-l-rose-500">
-                                <div class="text-xs font-bold text-rose-600 dark:text-rose-400">🌐 WAN (Attacker)</div>
+                                <div class="text-xs font-bold text-rose-600 dark:text-rose-400 inline-flex items-center justify-center gap-1.5"><i data-lucide="globe" class="h-3.5 w-3.5"></i><span>WAN (Attacker)</span></div>
                                 <div class="text-[11px] font-mono text-muted-foreground mt-1">192.168.63.0/24</div>
                             </div>
                             <div class="iris-subcard p-3 border-l-4 border-l-cyan-500">
-                                <div class="text-xs font-bold text-cyan-600 dark:text-cyan-300">🔥 pfSense Firewall</div>
+                                <div class="text-xs font-bold text-cyan-600 dark:text-cyan-300 inline-flex items-center justify-center gap-1.5"><i data-lucide="flame" class="h-3.5 w-3.5"></i><span>pfSense Firewall</span></div>
                                 <div class="text-[11px] font-mono text-muted-foreground mt-1">192.168.171.2 (REST API v2)</div>
                             </div>
                             <div class="iris-subcard p-3 border-l-4 border-l-indigo-500">
-                                <div class="text-xs font-bold text-indigo-600 dark:text-indigo-300">🔍 Threat Intel Layer</div>
+                                <div class="text-xs font-bold text-indigo-600 dark:text-indigo-300 inline-flex items-center justify-center gap-1.5"><i data-lucide="search" class="h-3.5 w-3.5"></i><span>Threat Intel Layer</span></div>
                                 <div class="text-[11px] font-mono text-muted-foreground mt-1">VT v3 + AbuseIPDB + MISP</div>
                             </div>
                             <div class="iris-subcard p-3 border-l-4 border-l-emerald-500">
-                                <div class="text-xs font-bold text-emerald-600 dark:text-emerald-400">🖥️ Victim LANs</div>
+                                <div class="text-xs font-bold text-emerald-600 dark:text-emerald-400 inline-flex items-center justify-center gap-1.5"><i data-lucide="monitor" class="h-3.5 w-3.5"></i><span>Victim LANs</span></div>
                                 <div class="text-[11px] font-mono text-muted-foreground mt-1">.214.0/24 &amp; .45.0/24</div>
                             </div>
                             <div class="iris-subcard p-3 border-l-4 border-l-purple-500">
-                                <div class="text-xs font-bold text-purple-600 dark:text-purple-400">🧠 Qwen LLM Core</div>
+                                <div class="text-xs font-bold text-purple-600 dark:text-purple-400 inline-flex items-center justify-center gap-1.5"><i data-lucide="brain" class="h-3.5 w-3.5"></i><span>Qwen LLM Core</span></div>
                                 <div class="text-[11px] font-mono text-muted-foreground mt-1">Host GPU (192.168.63.1)</div>
                             </div>
                         </div>
@@ -317,9 +293,7 @@
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div class="flex flex-wrap items-center gap-3 min-w-0">
                                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
-                                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                                        </svg>
+                                        <i data-lucide="shield-alert" class="h-5 w-5"></i>
                                     </div>
                                     <div class="min-w-0">
                                         <div class="flex flex-wrap items-center gap-2">
@@ -341,14 +315,17 @@
                                         <option value="Eradication">Eradication</option>
                                         <option value="Post-Incident">Post-Incident</option>
                                     </select>
-                                    <button onclick="toggleAssetsFlagView()" class="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition">
-                                        🏷️ Assets by flag
+                                    <button onclick="toggleAssetsFlagView()" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition">
+                                        <i data-lucide="tag" class="h-3.5 w-3.5"></i>
+                                        <span>Assets by flag</span>
                                     </button>
-                                    <button onclick="toggleCreateRoomForm()" class="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition">
-                                        + Tạo Room
+                                    <button onclick="toggleCreateRoomForm()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition">
+                                        <i data-lucide="plus" class="h-3.5 w-3.5"></i>
+                                        <span>Tạo Room</span>
                                     </button>
-                                    <button id="btn-delete-room" onclick="deleteCurrentRoom()" class="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/30 text-xs font-medium transition">
-                                        🗑️ Xóa
+                                    <button id="btn-delete-room" onclick="deleteCurrentRoom()" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-300 border border-rose-500/30 text-xs font-medium transition">
+                                        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                        <span>Xóa</span>
                                     </button>
                                 </div>
                             </div>
@@ -382,31 +359,38 @@
                                 </div>
                                 <div class="col-span-12 md:col-span-2 flex items-end gap-1.5">
                                     <button type="submit" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-semibold py-1.5 rounded-lg transition">Tạo Phòng</button>
-                                    <button type="button" onclick="toggleCreateRoomForm(false)" class="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-muted-foreground">✕</button>
+                                    <button type="button" onclick="toggleCreateRoomForm(false)" class="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-muted-foreground" aria-label="Đóng">
+                                        <i data-lucide="x" class="h-3.5 w-3.5"></i>
+                                    </button>
                                 </div>
                             </form>
                         </div>
 
                         <!-- War Room Underline Tabs (WarRoomTabs.svelte style) -->
                         <nav class="flex items-center gap-1 overflow-x-auto border-b border-border bg-card px-4" aria-label="War room sub-views">
-                            <button id="room-subtab-all" onclick="setRoomSubTab('all')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
-                                ✨ Tất cả trong 1
+                            <button id="room-subtab-all" onclick="setRoomSubTab('all')" class="room-subtab relative shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition">
+                                <i data-lucide="sparkles" class="h-3.5 w-3.5"></i>
+                                <span>Tất cả trong 1</span>
                                 <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
                             </button>
-                            <button id="room-subtab-board" onclick="setRoomSubTab('board')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
-                                📊 Board
+                            <button id="room-subtab-board" onclick="setRoomSubTab('board')" class="room-subtab relative shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition">
+                                <i data-lucide="bar-chart-3" class="h-3.5 w-3.5"></i>
+                                <span>Board</span>
                                 <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
                             </button>
-                            <button id="room-subtab-stream" onclick="setRoomSubTab('stream')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
-                                💬 Stream &amp; AI Chat
+                            <button id="room-subtab-stream" onclick="setRoomSubTab('stream')" class="room-subtab relative shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition">
+                                <i data-lucide="message-square" class="h-3.5 w-3.5"></i>
+                                <span>Stream &amp; AI Chat</span>
                                 <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
                             </button>
-                            <button id="room-subtab-decisions" onclick="setRoomSubTab('decisions')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
-                                ⚖️ Decisions
+                            <button id="room-subtab-decisions" onclick="setRoomSubTab('decisions')" class="room-subtab relative shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition">
+                                <i data-lucide="scale" class="h-3.5 w-3.5"></i>
+                                <span>Decisions</span>
                                 <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
                             </button>
-                            <button id="room-subtab-cases" onclick="setRoomSubTab('cases')" class="room-subtab relative shrink-0 px-3 py-2.5 text-xs font-medium transition">
-                                🗂️ Cases &amp; Drag-Drop
+                            <button id="room-subtab-cases" onclick="setRoomSubTab('cases')" class="room-subtab relative shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition">
+                                <i data-lucide="folder-open" class="h-3.5 w-3.5"></i>
+                                <span>Cases &amp; Drag-Drop</span>
                                 <span class="room-subtab-bar absolute inset-x-2 -bottom-px h-0.5 rounded-full"></span>
                             </button>
                         </nav>
@@ -419,7 +403,7 @@
                             <!-- Sub-section 1: Board KPIs (2x4 grid) -->
                             <div id="room-sec-board" class="space-y-3">
                                 <div class="flex items-center justify-between">
-                                    <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground">📊 Board Tổng Quan Tác Chiến</h3>
+                                    <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5"><i data-lucide="bar-chart-3" class="h-3.5 w-3.5"></i><span>Board Tổng Quan Tác Chiến</span></h3>
                                 </div>
                                 <div id="room-board-kpis" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
                             </div>
@@ -428,7 +412,7 @@
                             <div id="room-sec-cases" class="grid grid-cols-12 gap-4">
                                 <div class="col-span-12 lg:col-span-4 iris-subcard p-3.5 space-y-2.5">
                                     <div class="flex justify-between items-center">
-                                        <span class="text-xs font-bold text-cyan-600 dark:text-cyan-300 uppercase">📥 Kéo Case vào Room</span>
+                                        <span class="text-xs font-bold text-cyan-600 dark:text-cyan-300 uppercase inline-flex items-center gap-1.5"><i data-lucide="inbox" class="h-3.5 w-3.5"></i><span>Kéo Case vào Room</span></span>
                                         <span id="room-available-count" class="text-[11px] font-mono text-muted-foreground">0 khả dụng</span>
                                     </div>
                                     <div id="room-available-cases" class="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs"></div>
@@ -440,7 +424,7 @@
                                      ondrop="onDropCaseToRoom(event)"
                                      class="col-span-12 lg:col-span-8 iris-subcard border-2 border-dashed p-3.5 space-y-2.5 transition-colors">
                                     <div class="flex justify-between items-center">
-                                        <span class="text-xs font-bold text-amber-600 dark:text-amber-300 uppercase">🗂️ Cases đang xử lý trong Board (Thả Case vào đây)</span>
+                                        <span class="text-xs font-bold text-amber-600 dark:text-amber-300 uppercase inline-flex items-center gap-1.5"><i data-lucide="folder-open" class="h-3.5 w-3.5"></i><span>Cases đang xử lý trong Board (Thả Case vào đây)</span></span>
                                         <span id="room-cases-count" class="text-[11px] font-mono text-muted-foreground">0 Cases</span>
                                     </div>
                                     <div id="room-board-cases-list" class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1"></div>
@@ -453,15 +437,16 @@
                                 <div id="room-sec-stream" class="col-span-12 xl:col-span-6 iris-subcard overflow-hidden flex flex-col">
                                     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card/60 px-3.5 py-2.5">
                                         <div class="flex items-center gap-2">
-                                            <span class="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase">💬 Stream &amp; AI War Room</span>
+                                            <span class="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase inline-flex items-center gap-1.5"><i data-lucide="message-square" class="h-3.5 w-3.5"></i><span>Stream &amp; AI War Room</span></span>
                                         </div>
                                         <div class="flex items-center gap-3">
                                             <label class="inline-flex items-center gap-1.5 text-[11px] text-foreground cursor-pointer select-none">
                                                 <input id="room-chat-ask-ai" type="checkbox" checked class="rounded border-input text-indigo-600 focus:ring-indigo-500">
-                                                <span>🤖 Chat với Qwen AI (GPU)</span>
+                                                <span class="inline-flex items-center gap-1"><i data-lucide="bot" class="h-3.5 w-3.5 text-indigo-500"></i><span>Chat với Qwen AI (GPU)</span></span>
                                             </label>
-                                            <button id="btn-ask-ai-room" onclick="askAiInRoom()" class="px-2.5 py-1 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-wait">
-                                                🤖 AI Tóm Tắt Tác Chiến
+                                            <button id="btn-ask-ai-room" onclick="askAiInRoom()" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold transition disabled:opacity-50 disabled:cursor-wait">
+                                                <i data-lucide="bot" class="h-3.5 w-3.5"></i>
+                                                <span>AI Tóm Tắt Tác Chiến</span>
                                             </button>
                                         </div>
                                     </div>
@@ -525,7 +510,7 @@
                                 <!-- Reversible Decisions -->
                                 <div id="room-sec-decisions" class="col-span-12 xl:col-span-6 iris-subcard p-3.5 flex flex-col space-y-3">
                                     <div class="flex justify-between items-center border-b border-border pb-2">
-                                        <span class="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase">⚖️ Decisions (Quyết Định Tác Chiến Có Nút Đảo Ngược)</span>
+                                        <span class="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase inline-flex items-center gap-1.5"><i data-lucide="scale" class="h-3.5 w-3.5"></i><span>Decisions</span></span>
                                         <span id="room-decisions-summary" class="text-[11px] font-mono text-muted-foreground">0 Active | 0 Reverted</span>
                                     </div>
 
@@ -540,11 +525,11 @@
                                         <div class="col-span-12 sm:col-span-4">
                                             <label class="block text-[10px] text-muted-foreground mb-1">Loại Quyết Định</label>
                                             <select id="dec-action-type" onchange="prefillDecisionTarget()" class="iris-input w-full px-2 py-1 text-xs">
-                                                <option value="BLOCK_IP">🔥 Chặn IP (pfSense)</option>
-                                                <option value="ISOLATE_ENDPOINT">🔒 Cô lập Endpoint (Wazuh)</option>
-                                                <option value="RELEASE_ENDPOINT">🔓 Mở cô lập Endpoint</option>
-                                                <option value="FLAG_ASSET">🚩 Đánh dấu Compromised</option>
-                                                <option value="CLOSE_CASE">📁 Đóng hồ sơ Case</option>
+                                                <option value="BLOCK_IP">Chặn IP (pfSense)</option>
+                                                <option value="ISOLATE_ENDPOINT">Cô lập Endpoint (Wazuh)</option>
+                                                <option value="RELEASE_ENDPOINT">Mở cô lập Endpoint</option>
+                                                <option value="FLAG_ASSET">Đánh dấu Compromised</option>
+                                                <option value="CLOSE_CASE">Đóng hồ sơ Case</option>
                                             </select>
                                         </div>
                                         <div class="col-span-12 sm:col-span-5">
@@ -556,15 +541,18 @@
                                         </div>
                                         <div class="col-span-6 sm:col-span-3">
                                             <select id="dec-ttl-seconds" title="Thời hạn hiệu lực (TTL)" class="iris-input w-full px-2 py-1.5 text-xs font-mono">
-                                                <option value="3600" selected>⏱️ TTL 1 giờ</option>
-                                                <option value="1800">⏱️ TTL 30 phút</option>
-                                                <option value="14400">⏱️ TTL 4 giờ</option>
-                                                <option value="86400">⏱️ TTL 24 giờ</option>
-                                                <option value="0">♾️ Không TTL</option>
+                                                <option value="3600" selected>TTL 1 giờ</option>
+                                                <option value="1800">TTL 30 phút</option>
+                                                <option value="14400">TTL 4 giờ</option>
+                                                <option value="86400">TTL 24 giờ</option>
+                                                <option value="0">Không TTL</option>
                                             </select>
                                         </div>
                                         <div class="col-span-6 sm:col-span-3">
-                                            <button type="submit" class="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold py-1.5 rounded-lg transition">⚖️ Thực Thi</button>
+                                            <button type="submit" class="w-full inline-flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold py-1.5 rounded-lg transition">
+                                                <i data-lucide="gavel" class="h-3.5 w-3.5"></i>
+                                                <span>Thực Thi</span>
+                                            </button>
                                         </div>
                                     </form>
 
@@ -580,11 +568,14 @@
                     <div id="case-panel" class="iris-panel p-5 space-y-4">
                         <div class="flex flex-wrap justify-between items-center border-b border-border pb-3 gap-3">
                             <div class="flex items-center gap-2.5">
-                                <span class="text-cyan-600 dark:text-cyan-400 font-bold text-sm">🗂️ QUẢN LÝ HỒ SƠ SỰ CỐ (ALERTS &amp; CASE MANAGEMENT)</span>
+                                <span class="text-cyan-600 dark:text-cyan-400 font-bold text-sm inline-flex items-center gap-2"><i data-lucide="folder-open" class="h-4 w-4"></i><span>QUẢN LÝ HỒ SƠ SỰ CỐ (ALERTS &amp; CASE MANAGEMENT)</span></span>
                                 <span id="case-summary-count" class="text-xs font-mono text-muted-foreground">(0 Cases | 0 Incidents Cha)</span>
                             </div>
                             <div class="flex flex-wrap items-center gap-2 text-xs">
-                                <input id="case-search" oninput="renderCasesFromCache(true)" type="text" placeholder="🔍 Tìm mã Case, IP, Agent..." class="iris-input px-2.5 py-1.5 w-48 font-mono text-xs">
+                                <div class="relative">
+                                    <i data-lucide="search" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground"></i>
+                                    <input id="case-search" oninput="renderCasesFromCache(true)" type="text" placeholder="Tìm mã Case, IP, Agent..." class="iris-input pl-8 pr-2.5 py-1.5 w-48 font-mono text-xs">
+                                </div>
                                 <select id="case-filter-domain" onchange="renderCasesFromCache(true)" class="iris-input px-2.5 py-1.5 text-xs">
                                     <option value="">Tất cả Miền (ALL)</option>
                                     <option value="NETWORK">Miền Mạng (NETWORK)</option>
@@ -600,7 +591,7 @@
 
                         <!-- Parent Incidents (Kill-Chain Correlation) -->
                         <div id="parent-incidents-section" class="hidden space-y-2">
-                            <div class="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">🔗 Chuỗi Tấn Công Đa Miền (Parent Incidents / Related Cases)</div>
+                            <div class="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider inline-flex items-center gap-1.5"><i data-lucide="link-2" class="h-3.5 w-3.5"></i><span>Chuỗi Tấn Công Đa Miền (Parent Incidents / Related Cases)</span></div>
                             <div id="parent-incidents-list" class="space-y-2"></div>
                         </div>
 
@@ -614,11 +605,14 @@
                     <div id="asset-panel" class="iris-panel p-5 space-y-4">
                         <div class="flex flex-wrap justify-between items-center border-b border-border pb-3 gap-3">
                             <div class="flex items-center gap-2.5">
-                                <span class="text-emerald-600 dark:text-emerald-400 font-bold text-sm">🖥️ QUẢN LÝ TÀI SẢN THIẾT BỊ VẬT LÝ &amp; MÁY CHỦ (ASSET MANAGER)</span>
+                                <span class="text-emerald-600 dark:text-emerald-400 font-bold text-sm inline-flex items-center gap-2"><i data-lucide="monitor" class="h-4 w-4"></i><span>QUẢN LÝ TÀI SẢN THIẾT BỊ VẬT LÝ &amp; MÁY CHỦ (ASSET MANAGER)</span></span>
                                 <span id="asset-summary-count" class="text-xs font-mono text-muted-foreground">(0 Thiết bị)</span>
                             </div>
                             <div class="flex flex-wrap items-center gap-2 text-xs">
-                                <input id="asset-search" oninput="renderAssetsFromCache(true)" type="text" placeholder="🔍 Tìm tên, IP, nhãn, chủ sở hữu..." class="iris-input px-2.5 py-1.5 font-mono w-56">
+                                <div class="relative">
+                                    <i data-lucide="search" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground"></i>
+                                    <input id="asset-search" oninput="renderAssetsFromCache(true)" type="text" placeholder="Tìm tên, IP, nhãn, chủ sở hữu..." class="iris-input pl-8 pr-2.5 py-1.5 font-mono w-56">
+                                </div>
                                 <select id="asset-filter-label" onchange="renderAssetsFromCache(true)" class="iris-input px-2.5 py-1.5">
                                     <option value="">Tất cả nhãn (ALL)</option>
                                     <option value="linux">linux</option>
@@ -660,8 +654,8 @@
                                 <button id="btn-asset-submit" type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-1.5 rounded-lg transition">
                                     + Lưu
                                 </button>
-                                <button id="btn-asset-cancel-edit" type="button" onclick="resetAssetForm()" class="hidden px-2 py-1.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition" title="Hủy sửa">
-                                    ✕
+                                <button id="btn-asset-cancel-edit" type="button" onclick="resetAssetForm()" class="hidden inline-flex items-center justify-center px-2 py-1.5 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition" title="Hủy sửa" aria-label="Hủy sửa">
+                                    <i data-lucide="x" class="h-3.5 w-3.5"></i>
                                 </button>
                             </div>
                         </form>
@@ -690,11 +684,12 @@
                     <div id="misp-panel" class="iris-panel p-5 space-y-4">
                         <div class="flex flex-wrap justify-between items-center border-b border-border pb-3 gap-3">
                             <div class="flex items-center gap-2.5">
-                                <span class="text-purple-600 dark:text-purple-400 font-bold text-sm">📑 KHO DỮ LIỆU MISP IOC CỤC BỘ (THREAT INTELLIGENCE REPOSITORY)</span>
+                                <span class="text-purple-600 dark:text-purple-400 font-bold text-sm inline-flex items-center gap-2"><i data-lucide="database" class="h-4 w-4"></i><span>KHO DỮ LIỆU MISP IOC CỤC BỘ (THREAT INTELLIGENCE REPOSITORY)</span></span>
                                 <span id="misp-count" class="text-xs font-mono text-muted-foreground">(0 IOCs)</span>
                             </div>
-                            <button id="btn-sync-osint" onclick="syncMispFeeds()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm flex items-center gap-1.5">
-                                <span>🔄 Cập Nhật Feed Từ OSINT</span>
+                            <button id="btn-sync-osint" onclick="syncMispFeeds()" class="bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm inline-flex items-center gap-1.5">
+                                <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
+                                <span>Cập Nhật Feed Từ OSINT</span>
                             </button>
                         </div>
 
@@ -738,7 +733,8 @@
                         <!-- Search bar -->
                         <div class="flex flex-wrap items-center justify-between gap-2">
                             <div class="relative w-full sm:w-80">
-                                <input id="misp-search" oninput="onMispSearchInput()" type="text" placeholder="🔍 Tìm nhanh IP, Hash, Domain, CVE..." class="iris-input w-full px-3 py-1.5 text-xs font-mono">
+                                <i data-lucide="search" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground"></i>
+                                <input id="misp-search" oninput="onMispSearchInput()" type="text" placeholder="Tìm nhanh IP, Hash, Domain, CVE..." class="iris-input w-full pl-8 pr-3 py-1.5 text-xs font-mono">
                             </div>
                             <div id="misp-info" class="text-xs text-muted-foreground">
                                 Hiển thị tối đa 100 IOCs mới nhất
@@ -774,11 +770,14 @@
             <div class="flex items-start justify-between gap-3 border-b border-border pb-3">
                 <div>
                     <h3 id="revert-modal-title" class="text-sm font-bold text-rose-600 dark:text-rose-400 flex items-center gap-2">
-                        <span>⚠️</span> Xác nhận Đảo ngược Kiểm soát (Human Safety Gate)
+                        <i data-lucide="triangle-alert" class="h-4 w-4"></i>
+                        <span>Xác nhận Đảo ngược Kiểm soát (Human Safety Gate)</span>
                     </h3>
                     <div id="revert-modal-header-meta" class="text-[11px] font-mono text-muted-foreground mt-1"></div>
                 </div>
-                <button type="button" onclick="closeRevertConfirmModal()" class="text-muted-foreground hover:text-foreground text-sm px-2 py-0.5 rounded">✕</button>
+                <button type="button" onclick="closeRevertConfirmModal()" class="inline-flex items-center justify-center text-muted-foreground hover:text-foreground text-sm p-1 rounded" aria-label="Đóng">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
             </div>
 
             <div id="revert-modal-origin" class="text-xs rounded-lg p-2.5 border border-border bg-muted/40"></div>
@@ -795,12 +794,16 @@
                 </div>
                 <div class="flex justify-end gap-2 pt-2 border-t border-border">
                     <button type="button" onclick="closeRevertConfirmModal()" class="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium transition">Hủy bỏ</button>
-                    <button id="btn-confirm-revert-submit" type="submit" class="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition">↩️ Xác nhận &amp; Thực thi Đảo ngược</button>
+                    <button id="btn-confirm-revert-submit" type="submit" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition">
+                        <i data-lucide="undo-2" class="h-3.5 w-3.5"></i>
+                        <span>Xác nhận &amp; Thực thi Đảo ngược</span>
+                    </button>
                 </div>
             </form>
         </div>
     </div>
 
+    <script src="/static/vendor/lucide.min.js"></script>
     <script src="/static/js/core/store.js"></script>
     <script src="/static/js/core/utils.js"></script>
     <script src="/static/js/core/shell.js"></script>
